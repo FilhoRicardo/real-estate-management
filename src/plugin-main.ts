@@ -79,6 +79,13 @@ function today() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+function addDays(date: string, amount: number) {
+  const d = new Date(`${date}T12:00:00`);
+  d.setDate(d.getDate() + amount);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 function normalisePath(path: string) {
   return path.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
 }
@@ -280,6 +287,27 @@ function appendDatedLog(text: string, note: string) {
   return `${text.trimEnd()}\n\n## Notes${block}`;
 }
 
+function ensureFrontmatter(text: string) {
+  return /^---\n[\s\S]*?\n---/.test(text) ? text : `---\n---\n\n${text.trimStart()}`;
+}
+
+function setFrontmatterScalar(text: string, key: string, value: string) {
+  const withFm = ensureFrontmatter(text);
+  const match = withFm.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return withFm;
+  const body = match[1];
+  const nextLine = `${key}: ${value}`;
+  const rx = new RegExp(`^${key}:.*$`, 'm');
+  const nextBody = rx.test(body)
+    ? body.replace(rx, nextLine)
+    : `${body.trimEnd()}\n${nextLine}`;
+  return `---\n${nextBody}\n---${withFm.slice(match[0].length)}`;
+}
+
+function updateFrontmatterScalars(text: string, fields: Record<string, string>) {
+  return Object.entries(fields).reduce((next, [key, value]) => setFrontmatterScalar(next, key, value), text);
+}
+
 function yamlList(items: string[]) {
   if (!items.length) return '[]';
   return `\n${items.map(item => `  - "${item.replace(/"/g, '\\"')}"`).join('\n')}`;
@@ -423,6 +451,32 @@ export default class RealEstateManagementPlugin extends Plugin {
     await this.app.vault.process(file, current => appendDatedLog(current, clean));
     new Notice('Task note added');
     this.refreshViews();
+  }
+
+  async updateTaskFields(file: TFile, fields: Record<string, string>) {
+    await this.app.vault.process(file, current => updateFrontmatterScalars(current, {
+      ...fields,
+      modified: today(),
+      dateModified: today(),
+    }));
+    new Notice('Task updated');
+    this.refreshViews();
+  }
+
+  async closeTask(file: TFile) {
+    await this.updateTaskFields(file, {
+      status: 'done',
+      completed: today(),
+      completedDate: today(),
+    });
+  }
+
+  async postponeTask(task: RemRecord) {
+    const fields: Record<string, string> = {};
+    if (task.due) fields.due = addDays(task.due, 7);
+    if (task.scheduled) fields.scheduled = addDays(task.scheduled, 7);
+    if (!task.due && !task.scheduled) fields.due = addDays(today(), 7);
+    await this.updateTaskFields(task.file, fields);
   }
 
   async openDailyLog(date = today()) {
@@ -603,6 +657,12 @@ class RealEstateManagementView extends ItemView {
     if (task.client) meta.createSpan({ text: task.client });
     if (task.property) meta.createSpan({ text: task.property });
 
+    const controls = detail.createDiv({ cls: 'rem-task-controls' });
+    this.dateControl(controls, 'Due', task.due || '', value => this.updateSelectedTask(task, { due: value }));
+    this.dateControl(controls, 'Scheduled', task.scheduled || '', value => this.updateSelectedTask(task, { scheduled: value }));
+    controls.createEl('button', { text: 'Postpone 1w' }).addEventListener('click', () => this.plugin.postponeTask(task));
+    controls.createEl('button', { text: 'Close task' }).addEventListener('click', () => this.plugin.closeTask(task.file));
+
     const openButton = header.createEl('button', { text: 'Open file' });
     openButton.addEventListener('click', () => this.app.workspace.getLeaf(false).openFile(task.file));
 
@@ -651,6 +711,19 @@ class RealEstateManagementView extends ItemView {
     if (!note) return;
     await this.plugin.addTaskNote(task.file, note);
     this.noteDraft = '';
+    await this.render();
+  }
+
+  dateControl(parent: HTMLElement, label: string, value: string, onChange: (value: string) => void) {
+    const wrap = parent.createEl('label', { cls: 'rem-date-control' });
+    wrap.createSpan({ text: label });
+    const input = wrap.createEl('input', { type: 'date' });
+    input.value = value;
+    input.addEventListener('change', () => onChange(input.value));
+  }
+
+  async updateSelectedTask(task: RemRecord, fields: Record<string, string>) {
+    await this.plugin.updateTaskFields(task.file, fields);
     await this.render();
   }
 }

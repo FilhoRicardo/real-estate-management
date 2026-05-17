@@ -163,6 +163,31 @@
   margin: 4px 0 0;
 }
 
+.rem-task-controls {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.rem-date-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rem-date-control span {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.rem-date-control input {
+  min-width: 150px;
+}
+
 .rem-task-detail-grid {
   display: grid;
   gap: 14px;
