@@ -299,6 +299,20 @@ function appendDatedLog(text: string, note: string) {
   return `${text.trimEnd()}\n\n## Notes${block}`;
 }
 
+function appendSectionBullet(text: string, heading: string, value: string) {
+  const clean = value.trim();
+  if (!clean) return text;
+  const rx = new RegExp(`(^|\\n)##\\s+${heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[ \\t]*(?=\\n|$)`, 'i');
+  const match = rx.exec(text);
+  const bullet = `- ${clean}`;
+  if (!match) return `${text.trimEnd()}\n\n## ${heading}\n\n${bullet}\n`;
+  const start = match.index + match[0].length;
+  const rest = text.slice(start);
+  const nextHeading = rest.search(/\n##\s+/);
+  const sectionEnd = nextHeading === -1 ? text.length : start + nextHeading;
+  return `${text.slice(0, sectionEnd).trimEnd()}\n${bullet}\n${text.slice(sectionEnd)}`;
+}
+
 function ensureFrontmatter(text: string) {
   return /^---\n[\s\S]*?\n---/.test(text) ? text : `---\n---\n\n${text.trimStart()}`;
 }
@@ -536,6 +550,22 @@ export default class RealEstateManagementPlugin extends Plugin {
     this.refreshViews();
   }
 
+  async dailyLogFile(date = today()) {
+    await this.ensureFolder(this.settings.dailyFolder);
+    const path = `${normalisePath(this.settings.dailyFolder)}/${date}.md`;
+    const existing = this.app.vault.getAbstractFileByPath(path);
+    return existing instanceof TFile
+      ? existing
+      : await this.app.vault.create(path, buildDailyLogMarkdown(date));
+  }
+
+  async appendDailyEntry(section: string, value: string) {
+    const file = await this.dailyLogFile();
+    await this.app.vault.process(file, current => appendSectionBullet(current, section, value));
+    new Notice(`Added to ${section}`);
+    this.refreshViews();
+  }
+
   async loadRecords(): Promise<RemRecord[]> {
     const records: RemRecord[] = [];
     for (const file of this.app.vault.getMarkdownFiles()) {
@@ -557,6 +587,7 @@ class RealEstateManagementView extends ItemView {
   selectedTaskPath = '';
   selectedRecordPath = '';
   noteDraft = '';
+  dailyDrafts: Record<string, string> = {};
 
   constructor(leaf: WorkspaceLeaf, plugin: RealEstateManagementPlugin) {
     super(leaf);
@@ -625,6 +656,7 @@ class RealEstateManagementView extends ItemView {
     this.stat(stats, 'Meetings', String(byKind('meeting').length));
 
     if (selectedTask) this.taskDetail(root, selectedTask);
+    this.dailyPanel(root, daily);
     if (selectedRecord) this.recordDetail(root, selectedRecord, records);
 
     const grid = root.createDiv({ cls: 'rem-dashboard-grid' });
@@ -758,6 +790,55 @@ class RealEstateManagementView extends ItemView {
       card.createDiv({ text: note.date, cls: 'rem-note-date' });
       card.createDiv({ text: note.text, cls: 'rem-note-text' });
     }
+  }
+
+  dailyPanel(parent: HTMLElement, daily: RemRecord | undefined) {
+    const panel = parent.createDiv({ cls: 'rem-daily-panel' });
+    const header = panel.createDiv({ cls: 'rem-daily-header' });
+    const title = header.createDiv();
+    title.createEl('div', { text: today(), cls: 'rem-kicker' });
+    title.createEl('h3', { text: 'Daily log' });
+    const open = header.createEl('button', { text: daily ? 'Open daily log' : 'Create daily log' });
+    open.addEventListener('click', () => this.plugin.openDailyLog());
+
+    const sections = [
+      ['Mission', sectionBody(daily?.raw || '', 'Mission')],
+      ['Notes', sectionBody(daily?.raw || '', 'Notes')],
+      ['Reflections', sectionBody(daily?.raw || '', 'Reflections')],
+      ['Brain dump', sectionBody(daily?.raw || '', 'Brain dump')],
+    ] as const;
+
+    const grid = panel.createDiv({ cls: 'rem-daily-grid' });
+    for (const [section, body] of sections) {
+      const card = grid.createDiv({ cls: 'rem-panel' });
+      card.createEl('h4', { text: section });
+      card.createDiv({ text: body || 'Nothing written yet.', cls: body ? 'rem-description rem-daily-body' : 'rem-empty' });
+      const editor = card.createDiv({ cls: 'rem-daily-editor' });
+      const input = editor.createEl('textarea', {
+        attr: {
+          placeholder: `Add ${section.toLowerCase()}...`,
+        },
+      });
+      input.value = this.dailyDrafts[section] || '';
+      input.addEventListener('input', () => {
+        this.dailyDrafts[section] = input.value;
+      });
+      input.addEventListener('keydown', async event => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          await this.saveDailyEntry(section);
+        }
+      });
+      editor.createEl('button', { text: 'Add' }).addEventListener('click', () => this.saveDailyEntry(section));
+    }
+  }
+
+  async saveDailyEntry(section: string) {
+    const value = (this.dailyDrafts[section] || '').trim();
+    if (!value) return;
+    await this.plugin.appendDailyEntry(section, value);
+    this.dailyDrafts[section] = '';
+    await this.render();
   }
 
   async saveTaskNote(task: RemRecord) {

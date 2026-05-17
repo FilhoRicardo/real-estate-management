@@ -291,6 +291,52 @@
   border-color: var(--interactive-accent);
 }
 
+.rem-daily-panel {
+  background: var(--background-primary-alt);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  margin-bottom: 18px;
+  padding: 14px;
+}
+
+.rem-daily-header {
+  align-items: flex-start;
+  border-bottom: 1px solid var(--background-modifier-border);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+}
+
+.rem-daily-header h3 {
+  margin: 4px 0 0;
+}
+
+.rem-daily-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.rem-daily-body {
+  max-height: 160px;
+  overflow: auto;
+}
+
+.rem-daily-editor {
+  align-items: stretch;
+  display: flex;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.rem-daily-editor textarea {
+  min-height: 58px;
+  resize: vertical;
+  width: 100%;
+}
+
 @media (max-width: 900px) {
   .rem-task-detail-grid,
   .rem-record-detail-grid {
