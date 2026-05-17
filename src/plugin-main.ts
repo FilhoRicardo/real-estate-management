@@ -74,6 +74,17 @@ interface RecordDraft {
   body: string;
 }
 
+interface RecordMetadataDraft {
+  title: string;
+  status: string;
+  date: string;
+  client: string;
+  property: string;
+  people: string;
+  projects: string;
+  tasks: string;
+}
+
 function today() {
   const d = new Date();
   const pad = (value: number) => String(value).padStart(2, '0');
@@ -127,6 +138,12 @@ function splitLinks(value: string) {
     .map(item => item.trim())
     .filter(Boolean)
     .map(asLink);
+}
+
+function displayLinks(values: string[]) {
+  return values
+    .map(value => value.replace(/^\[\[/, '').replace(/\]\]$/, ''))
+    .join(', ');
 }
 
 function firstString(value: unknown) {
@@ -531,6 +548,26 @@ export default class RealEstateManagementPlugin extends Plugin {
     this.refreshViews();
   }
 
+  async updateRecordMetadata(record: RemRecord, draft: RecordMetadataDraft) {
+    const fields: Record<string, string> = {
+      title: yamlString(draft.title.trim() || record.title),
+      status: draft.status.trim() || record.status || 'active',
+      date: draft.date.trim(),
+      modified: today(),
+      dateModified: today(),
+    };
+
+    if (record.kind !== 'client') fields.client = draft.client.trim() ? yamlString(asLink(draft.client)) : '';
+    if (!['client', 'property'].includes(record.kind)) fields.property = draft.property.trim() ? yamlString(asLink(draft.property)) : '';
+    fields.people = yamlList(splitLinks(draft.people));
+    fields.projects = yamlList(splitLinks(draft.projects));
+    if (record.kind === 'meeting') fields.tasks = yamlList(splitLinks(draft.tasks));
+
+    await this.app.vault.process(record.file, current => updateFrontmatterScalars(current, fields));
+    new Notice('Record metadata updated');
+    this.refreshViews();
+  }
+
   async closeTask(file: TFile) {
     await this.updateTaskFields(file, {
       status: 'done',
@@ -913,7 +950,10 @@ class RealEstateManagementView extends ItemView {
     if (record.property) meta.createSpan({ text: record.property });
     if (record.date) meta.createSpan({ text: record.date });
 
-    const openButton = header.createEl('button', { text: 'Open file' });
+    const actions = header.createDiv({ cls: 'rem-detail-actions' });
+    const editButton = actions.createEl('button', { text: 'Edit metadata' });
+    editButton.addEventListener('click', () => new RecordMetadataModal(this.app, this.plugin, record).open());
+    const openButton = actions.createEl('button', { text: 'Open file' });
     openButton.addEventListener('click', () => this.app.workspace.getLeaf(false).openFile(record.file));
 
     const grid = detail.createDiv({ cls: 'rem-record-detail-grid' });
@@ -1076,6 +1116,68 @@ class RecordCreateModal extends Modal {
         .setValue(String(this.draft[key] || ''))
         .onChange(value => {
           this.draft[key] = value as never;
+        }));
+  }
+}
+
+class RecordMetadataModal extends Modal {
+  plugin: RealEstateManagementPlugin;
+  record: RemRecord;
+  draft: RecordMetadataDraft;
+
+  constructor(app: App, plugin: RealEstateManagementPlugin, record: RemRecord) {
+    super(app);
+    this.plugin = plugin;
+    this.record = record;
+    this.draft = {
+      title: record.title,
+      status: record.status || 'active',
+      date: record.date || '',
+      client: record.client ? record.client.replace(/^\[\[/, '').replace(/\]\]$/, '') : '',
+      property: record.property ? record.property.replace(/^\[\[/, '').replace(/\]\]$/, '') : '',
+      people: displayLinks(record.people),
+      projects: displayLinks(record.projects),
+      tasks: displayLinks(record.tasks),
+    };
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass('rem-modal');
+    contentEl.createEl('h2', { text: `Edit ${this.record.kind}` });
+
+    this.text('Title', 'Shown in the dashboard and frontmatter.', 'title');
+    this.text('Status', 'active, paused, done, archived, etc.', 'status');
+    this.text('Date', 'YYYY-MM-DD when useful.', 'date');
+    if (this.record.kind !== 'client') this.text('Client', 'Client note name.', 'client');
+    if (!['client', 'property'].includes(this.record.kind)) this.text('Property', 'Property note name.', 'property');
+    this.text('People', 'Comma-separated people names.', 'people');
+    this.text('Projects', 'Comma-separated project names.', 'projects');
+    if (this.record.kind === 'meeting') this.text('Tasks', 'Comma-separated task names.', 'tasks');
+
+    new Setting(contentEl)
+      .addButton(button => button
+        .setButtonText('Save metadata')
+        .setCta()
+        .onClick(async () => {
+          if (!this.draft.title.trim()) {
+            new Notice('Title is required.');
+            return;
+          }
+          await this.plugin.updateRecordMetadata(this.record, this.draft);
+          this.close();
+        }));
+  }
+
+  text(name: string, desc: string, key: keyof RecordMetadataDraft) {
+    new Setting(this.contentEl)
+      .setName(name)
+      .setDesc(desc)
+      .addText(text => text
+        .setValue(this.draft[key])
+        .onChange(value => {
+          this.draft[key] = value;
         }));
   }
 }
