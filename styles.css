@@ -12,8 +12,18 @@
   padding-bottom: 14px;
 }
 
+.rem-hero {
+  gap: 24px;
+}
+
 .rem-header h2 {
   margin: 4px 0 0;
+}
+
+.rem-subtitle {
+  color: var(--text-muted);
+  margin: 8px 0 0;
+  max-width: 640px;
 }
 
 .rem-kicker {
@@ -28,11 +38,32 @@
   flex-shrink: 0;
 }
 
+.rem-action-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  max-width: 360px;
+}
+
+.rem-action-grid button {
+  border-radius: 8px;
+  font-size: var(--font-ui-small);
+  font-weight: 700;
+  padding: 7px 10px;
+}
+
 .rem-stats {
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   margin-bottom: 18px;
+}
+
+.rem-dashboard-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
 
 .rem-stat,
@@ -79,7 +110,12 @@
 }
 
 .rem-task-row {
+  cursor: pointer;
   padding: 10px 12px;
+}
+
+.rem-task-row:hover {
+  border-color: var(--interactive-accent);
 }
 
 .rem-task-title {
@@ -94,4 +130,8 @@
   font-size: var(--font-ui-smaller);
   gap: 8px;
   margin-top: 6px;
+}
+
+.rem-modal textarea {
+  min-height: 120px;
 }
