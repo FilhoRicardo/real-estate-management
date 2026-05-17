@@ -1,0 +1,97 @@
+.rem-plugin-root {
+  padding: 18px;
+}
+
+.rem-header {
+  align-items: flex-start;
+  border-bottom: 1px solid var(--background-modifier-border);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+}
+
+.rem-header h2 {
+  margin: 4px 0 0;
+}
+
+.rem-kicker {
+  color: var(--text-accent);
+  font-size: var(--font-ui-smaller);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.rem-actions {
+  flex-shrink: 0;
+}
+
+.rem-stats {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  margin-bottom: 18px;
+}
+
+.rem-stat,
+.rem-section,
+.rem-task-row {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+}
+
+.rem-stat {
+  padding: 12px;
+}
+
+.rem-stat-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: 700;
+}
+
+.rem-stat-value {
+  color: var(--text-normal);
+  font-size: 24px;
+  font-weight: 800;
+  margin-top: 4px;
+}
+
+.rem-section {
+  padding: 14px;
+}
+
+.rem-section h3 {
+  margin: 0 0 12px;
+}
+
+.rem-empty {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.rem-task-list {
+  display: grid;
+  gap: 8px;
+}
+
+.rem-task-row {
+  padding: 10px 12px;
+}
+
+.rem-task-title {
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.rem-task-meta {
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--font-ui-smaller);
+  gap: 8px;
+  margin-top: 6px;
+}

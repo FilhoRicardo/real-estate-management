@@ -1,0 +1,9 @@
+{
+  "id": "real-estate-management",
+  "name": "Real Estate Management",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Mission control for tasks, properties, people, projects, meetings, and daily work inside an Obsidian vault.",
+  "author": "Ricardo Filho",
+  "isDesktopOnly": false
+}
