@@ -2,7 +2,7 @@
 
 This is the Obsidian plugin migration of TaskDash.
 
-The existing TaskDash web app remains the stable production app. This repo is a native Obsidian plugin experiment so the same real-estate mission control workflow can eventually run inside Obsidian without browser folder permissions.
+The existing TaskDash web app remains the stable production app for now. This repo is the native Obsidian plugin version of the same real-estate mission control workflow, built to avoid browser folder permissions and use Obsidian's vault APIs directly.
 
 ## Current Milestone
 
@@ -15,8 +15,14 @@ Milestone 1 now establishes the independent plugin core:
 - Creates/opens today's daily log.
 - Shows a dashboard for tasks, clients, properties, people, projects, meetings, and daily logs.
 - Reads older TaskNotes-style task files as legacy compatibility records.
+- Shows a task detail panel with description and notes.
+- Adds task notes through `app.vault.process`.
+- Supports due/scheduled edits, postpone one week, and close task.
+- Shows detail panels for clients, properties, people, projects, and meetings.
+- Shows linked tasks, meetings, projects, people, and properties.
+- Adds a daily log panel for Mission, Notes, Reflections, and Brain dump.
 
-Advanced task detail editing, comments, archive actions, recurrence, property comments, and time tracking have not been migrated yet.
+Recurrence, property comments, richer record editing, meeting-specific workflows, and time tracking have not been migrated yet.
 
 ## Development
 
@@ -78,13 +84,13 @@ Supported `remType` values:
 
 ## Suggested Migration Roadmap
 
-1. Add a task detail view with description and notes side-by-side.
-2. Add conflict-safe task comment writing.
-3. Add task close and recurrent instance completion.
-4. Add richer client/property/person/project detail panels.
-5. Add meeting notes linked to every layer.
-6. Port daily-log time tracking.
-7. Add safety tools: pre-write conflict checks, restorable backups, and skipped-file diagnostics.
+1. Add richer record editing for clients, properties, people, projects, and meetings.
+2. Add property comments using the same dated-log pattern as tasks.
+3. Add recurrent task instance handling.
+4. Add meeting-specific start/stop and linked action capture.
+5. Port daily-log time tracking.
+6. Add safety tools: pre-write conflict checks, restorable backups, and skipped-file diagnostics.
+7. Add search and saved filters across every record layer.
 
 ## Why Plugin
 
