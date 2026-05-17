@@ -17,6 +17,7 @@ Milestone 1 now establishes the independent plugin core:
 - Provides first-run folder setup from the dashboard and settings page.
 - Reads older TaskNotes-style task files as legacy compatibility records.
 - Adds type-specific creation forms for tasks, clients, properties, people, projects, and meetings.
+- Uses calendar date pickers for task due/scheduled dates, meeting dates, and project dates.
 - Shows a task detail panel with description and notes.
 - Adds task notes through `app.vault.process`.
 - Supports due/scheduled edits, postpone one week, and close task.

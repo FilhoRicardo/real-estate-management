@@ -77,6 +77,17 @@ interface RecordDraft {
   recurrent: string;
   recurrence: string;
   contexts: string;
+  date: string;
+  address: string;
+  city: string;
+  propertyType: string;
+  role: string;
+  email: string;
+  phone: string;
+  company: string;
+  projectType: string;
+  startDate: string;
+  targetDate: string;
 }
 
 interface RecordMetadataDraft {
@@ -635,6 +646,11 @@ function yamlString(value: string) {
   return `"${value.replace(/"/g, '\\"')}"`;
 }
 
+function yamlScalar(value: string) {
+  const clean = value.trim();
+  return clean ? yamlString(clean) : '';
+}
+
 function buildRecordMarkdown(draft: RecordDraft) {
   const title = draft.title.trim();
   const created = today();
@@ -650,12 +666,24 @@ function buildRecordMarkdown(draft: RecordDraft) {
   }
 
   if (draft.kind === 'meeting') {
-    return `---\nremType: meeting\ntitle: ${yamlString(title)}\ndate: ${created}\nclient: ${client ? yamlString(client) : ''}\nproperty: ${property ? yamlString(property) : ''}\npeople: ${yamlList(people)}\nprojects: ${yamlList(projects)}\ntasks: ${yamlList(tasks)}\ntags:\n  - ${REM_TAG}\n  - rem-meeting\n---\n\n# ${title}\n\n## Notes\n\n${body || ''}\n\n## Decisions\n\n-\n\n## Actions\n\n-\n`;
+    return `---\nremType: meeting\ntitle: ${yamlString(title)}\ndate: ${draft.date || created}\nclient: ${client ? yamlString(client) : ''}\nproperty: ${property ? yamlString(property) : ''}\npeople: ${yamlList(people)}\nprojects: ${yamlList(projects)}\ntasks: ${yamlList(tasks)}\ntags:\n  - ${REM_TAG}\n  - rem-meeting\n---\n\n# ${title}\n\n## Notes\n\n${body || ''}\n\n## Decisions\n\n-\n\n## Actions\n\n-\n`;
   }
 
   const tag = `rem-${draft.kind}`;
+  const extraFields = [
+    draft.kind === 'property' ? `address: ${yamlScalar(draft.address)}` : '',
+    draft.kind === 'property' ? `city: ${yamlScalar(draft.city)}` : '',
+    draft.kind === 'property' ? `propertyType: ${yamlScalar(draft.propertyType)}` : '',
+    draft.kind === 'person' ? `role: ${yamlScalar(draft.role)}` : '',
+    draft.kind === 'person' ? `email: ${yamlScalar(draft.email)}` : '',
+    draft.kind === 'person' ? `phone: ${yamlScalar(draft.phone)}` : '',
+    draft.kind === 'person' ? `company: ${yamlScalar(draft.company)}` : '',
+    draft.kind === 'project' ? `projectType: ${yamlScalar(draft.projectType)}` : '',
+    draft.kind === 'project' ? `startDate: ${draft.startDate || ''}` : '',
+    draft.kind === 'project' ? `targetDate: ${draft.targetDate || ''}` : '',
+  ].filter(Boolean).join('\n');
   const linkBlock = `client: ${client ? yamlString(client) : ''}\nproperty: ${property ? yamlString(property) : ''}\npeople: ${yamlList(people)}\nprojects: ${yamlList(projects)}\ntasks: ${yamlList(tasks)}`;
-  return `---\nremType: ${draft.kind}\ntitle: ${yamlString(title)}\nstatus: ${draft.status || 'active'}\ncreated: ${created}\nmodified: ${created}\n${linkBlock}\ntags:\n  - ${REM_TAG}\n  - ${tag}\n---\n\n# ${title}\n\n${body || ''}\n\n---\n\n## Notes\n\n---\n`;
+  return `---\nremType: ${draft.kind}\ntitle: ${yamlString(title)}\nstatus: ${draft.status || 'active'}\ncreated: ${created}\nmodified: ${created}\n${extraFields ? `${extraFields}\n` : ''}${linkBlock}\ntags:\n  - ${REM_TAG}\n  - ${tag}\n---\n\n# ${title}\n\n${body || ''}\n\n---\n\n## Notes\n\n---\n`;
 }
 
 function buildDailyLogMarkdown(date: string) {
@@ -819,6 +847,17 @@ export default class RealEstateManagementPlugin extends Plugin {
       recurrent: 'false',
       recurrence: '',
       contexts: '',
+      date: '',
+      address: '',
+      city: '',
+      propertyType: '',
+      role: '',
+      email: '',
+      phone: '',
+      company: '',
+      projectType: '',
+      startDate: '',
+      targetDate: '',
     });
   }
 
@@ -1587,6 +1626,17 @@ class RecordCreateModal extends Modal {
       recurrent: 'false',
       recurrence: '',
       contexts: 'Work',
+      date: '',
+      address: '',
+      city: '',
+      propertyType: '',
+      role: '',
+      email: '',
+      phone: '',
+      company: '',
+      projectType: '',
+      startDate: '',
+      targetDate: '',
     };
   }
 
@@ -1602,8 +1652,8 @@ class RecordCreateModal extends Modal {
     if (this.draft.kind === 'task') {
       this.dropdown('Status', 'TaskNotes-style status.', 'status', ['open', 'in-progress', 'waiting', 'done']);
       this.dropdown('Priority', 'TaskNotes-style priority.', 'priority', ['normal', 'high', 'low']);
-      this.text('Due', 'YYYY-MM-DD deadline.', 'due');
-      this.text('Scheduled', 'YYYY-MM-DD planned work date.', 'scheduled');
+      this.date('Due', 'Deadline.', 'due');
+      this.date('Scheduled', 'Planned work date.', 'scheduled');
       this.text('Contexts', 'Comma-separated contexts, for example Work, Calls, Admin.', 'contexts');
       this.text('Client', 'Optional linked client/org note name.', 'client');
       this.text('Property', 'Optional linked property note name.', 'property');
@@ -1612,21 +1662,39 @@ class RecordCreateModal extends Modal {
       this.dropdown('Recurrent', 'Whether this task repeats.', 'recurrent', ['false', 'true']);
       this.text('Recurrence', 'weekly, daily, monthly, quarterly, yearly, or every 14 days.', 'recurrence');
     } else if (this.draft.kind === 'client') {
+      this.dropdown('Status', 'Relationship status.', 'status', ['active', 'prospect', 'paused', 'archived']);
+      this.text('Company / group', 'Optional trading or group name.', 'company');
+      this.text('Email', 'General email address.', 'email');
+      this.text('Phone', 'General phone number.', 'phone');
       this.text('People', 'Main contacts for this client, comma-separated.', 'people');
       this.text('Projects', 'Known projects for this client, comma-separated.', 'projects');
     } else if (this.draft.kind === 'property') {
+      this.dropdown('Status', 'Property status.', 'status', ['active', 'prospect', 'on-hold', 'archived']);
+      this.text('Address', 'Street address or building address.', 'address');
+      this.text('City / area', 'City, area, or estate.', 'city');
+      this.dropdown('Property type', 'Portfolio classification.', 'propertyType', ['office', 'retail', 'industrial', 'residential', 'mixed-use', 'land', 'other']);
       this.text('Client', 'Owner/client/org note name.', 'client');
       this.text('People', 'People linked to this property, comma-separated.', 'people');
       this.text('Projects', 'Projects linked to this property, comma-separated.', 'projects');
     } else if (this.draft.kind === 'person') {
+      this.dropdown('Status', 'Contact status.', 'status', ['active', 'follow-up', 'inactive', 'archived']);
+      this.text('Role', 'Role, title, or relationship.', 'role');
+      this.text('Company', 'Organisation or employer.', 'company');
+      this.text('Email', 'Email address.', 'email');
+      this.text('Phone', 'Phone number.', 'phone');
       this.text('Client', 'Optional employer/client/org note name.', 'client');
       this.text('Property', 'Optional property note name.', 'property');
       this.text('Projects', 'Projects linked to this person, comma-separated.', 'projects');
     } else if (this.draft.kind === 'project') {
+      this.dropdown('Status', 'Project status.', 'status', ['active', 'planning', 'waiting', 'on-hold', 'done', 'archived']);
+      this.text('Project type', 'Module, capex, leasing, research, admin, etc.', 'projectType');
+      this.date('Start date', 'Project start date.', 'startDate');
+      this.date('Target date', 'Target completion date.', 'targetDate');
       this.text('Client', 'Optional client/org note name.', 'client');
       this.text('Property', 'Optional property note name.', 'property');
       this.text('People', 'Project people, comma-separated.', 'people');
     } else if (this.draft.kind === 'meeting') {
+      this.date('Meeting date', 'Meeting date.', 'date');
       this.text('Client', 'Optional client/org note name.', 'client');
       this.text('Property', 'Optional property note name.', 'property');
       this.text('People', 'Meeting attendees, comma-separated.', 'people');
@@ -1665,6 +1733,19 @@ class RecordCreateModal extends Modal {
         .onChange(value => {
           this.draft[key] = value as never;
         }));
+  }
+
+  date(name: string, desc: string, key: keyof RecordDraft) {
+    new Setting(this.contentEl)
+      .setName(name)
+      .setDesc(desc)
+      .addText(text => {
+        text.inputEl.type = 'date';
+        text.setValue(String(this.draft[key] || ''));
+        text.onChange(value => {
+          this.draft[key] = value as never;
+        });
+      });
   }
 
   dropdown(name: string, desc: string, key: keyof RecordDraft, options: string[]) {
