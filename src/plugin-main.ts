@@ -76,6 +76,7 @@ interface RecordDraft {
   body: string;
   recurrent: string;
   recurrence: string;
+  contexts: string;
 }
 
 interface RecordMetadataDraft {
@@ -645,7 +646,7 @@ function buildRecordMarkdown(draft: RecordDraft) {
   const body = draft.body.trim();
 
   if (draft.kind === 'task') {
-    return `---\nremType: task\ntitle: ${yamlString(title)}\nstatus: ${draft.status || 'open'}\npriority: ${draft.priority || 'normal'}\ndue: ${draft.due || ''}\nscheduled: ${draft.scheduled || ''}\nrecurrent: ${draft.recurrent === 'true' ? 'true' : 'false'}\nrecurrence: ${draft.recurrence || ''}\ncreated: ${created}\nmodified: ${created}\nclient: ${client ? yamlString(client) : ''}\nproperty: ${property ? yamlString(property) : ''}\npeople: ${yamlList(people)}\nprojects: ${yamlList(projects)}\ntags:\n  - ${REM_TAG}\n  - rem-task\n---\n\n# ${title}\n\n## Description\n\n${body || ''}\n\n---\n\n## Notes\n\n---\n`;
+    return `---\nremType: task\ntitle: ${yamlString(title)}\nstatus: ${draft.status || 'open'}\npriority: ${draft.priority || 'normal'}\ndue: ${draft.due || ''}\nscheduled: ${draft.scheduled || ''}\ncontexts: ${yamlList(splitLinks(draft.contexts || 'Work'))}\nrecurrent: ${draft.recurrent === 'true' ? 'true' : 'false'}\nrecurrence: ${draft.recurrence || ''}\ncreated: ${created}\nmodified: ${created}\nclient: ${client ? yamlString(client) : ''}\nproperty: ${property ? yamlString(property) : ''}\npeople: ${yamlList(people)}\nprojects: ${yamlList(projects)}\ntags:\n  - ${REM_TAG}\n  - rem-task\n---\n\n# ${title}\n\n## Description\n\n${body || ''}\n\n---\n\n## Notes\n\n---\n`;
   }
 
   if (draft.kind === 'meeting') {
@@ -741,6 +742,27 @@ export default class RealEstateManagementPlugin extends Plugin {
     }
   }
 
+  async ensureConfiguredFolders() {
+    await Promise.all([
+      this.ensureFolder(this.settings.tasksFolder),
+      this.ensureFolder(this.settings.doneFolder),
+      this.ensureFolder(this.settings.clientsFolder),
+      this.ensureFolder(this.settings.propertiesFolder),
+      this.ensureFolder(this.settings.peopleFolder),
+      this.ensureFolder(this.settings.projectsFolder),
+      this.ensureFolder(this.settings.meetingsFolder),
+      this.ensureFolder(this.settings.dailyFolder),
+    ]);
+    new Notice('Real Estate Management folders are ready');
+    this.refreshViews();
+  }
+
+  openSettingsTab() {
+    const setting = (this.app as App & { setting?: { open: () => void; openTabById: (id: string) => void } }).setting;
+    setting?.open();
+    setting?.openTabById(this.manifest.id);
+  }
+
   async uniquePath(folder: string, filename: string) {
     const cleanFolder = normalisePath(folder);
     const base = filename.replace(/\.md$/i, '');
@@ -796,6 +818,7 @@ export default class RealEstateManagementPlugin extends Plugin {
       body,
       recurrent: 'false',
       recurrence: '',
+      contexts: '',
     });
   }
 
@@ -1028,6 +1051,8 @@ class RealEstateManagementView extends ItemView {
     this.action(actions, '+ Project', () => this.plugin.openCreateModal('project'));
     this.action(actions, '+ Meeting', () => this.plugin.openCreateModal('meeting'));
     this.action(actions, daily ? 'Open Daily Log' : 'Create Daily Log', () => this.plugin.openDailyLog());
+    this.action(actions, 'Setup folders', () => this.plugin.ensureConfiguredFolders());
+    this.action(actions, 'Settings', () => this.plugin.openSettingsTab());
     this.action(actions, 'Refresh', () => this.render());
 
     const stats = root.createDiv({ cls: 'rem-stats' });
@@ -1105,7 +1130,10 @@ class RealEstateManagementView extends ItemView {
     const panel = parent.createDiv({ cls: 'rem-health-panel' });
     const header = panel.createDiv({ cls: 'rem-health-header' });
     header.createEl('h3', { text: 'Health checks' });
-    header.createSpan({ text: `${issues.length} item${issues.length === 1 ? '' : 's'}` });
+    const actions = header.createDiv({ cls: 'rem-health-actions' });
+    actions.createSpan({ text: `${issues.length} item${issues.length === 1 ? '' : 's'}` });
+    actions.createEl('button', { text: 'Create folders' }).addEventListener('click', () => this.plugin.ensureConfiguredFolders());
+    actions.createEl('button', { text: 'Settings' }).addEventListener('click', () => this.plugin.openSettingsTab());
     for (const issue of issues.slice(0, 8)) {
       const row = panel.createDiv({ cls: `rem-health-row is-${issue.level}` });
       row.createSpan({ text: issue.level.toUpperCase(), cls: 'rem-health-level' });
@@ -1558,6 +1586,7 @@ class RecordCreateModal extends Modal {
       body: '',
       recurrent: 'false',
       recurrence: '',
+      contexts: 'Work',
     };
   }
 
@@ -1565,26 +1594,50 @@ class RecordCreateModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass('rem-modal');
-    contentEl.createEl('h2', { text: `New ${this.draft.kind}` });
+    contentEl.createEl('h2', { text: this.modalTitle() });
+    contentEl.createEl('p', { text: this.modalDescription(), cls: 'rem-modal-help' });
 
-    this.text('Title', 'Required', 'title');
+    this.text('Title', this.titleHelp(), 'title');
+
     if (this.draft.kind === 'task') {
-      this.text('Priority', 'normal, high, low', 'priority');
-      this.text('Due', 'YYYY-MM-DD', 'due');
-      this.text('Scheduled', 'YYYY-MM-DD', 'scheduled');
-      this.text('Recurrent', 'true or false', 'recurrent');
-      this.text('Recurrence', 'weekly, daily, monthly, quarterly, yearly, or every 14 days', 'recurrence');
+      this.dropdown('Status', 'TaskNotes-style status.', 'status', ['open', 'in-progress', 'waiting', 'done']);
+      this.dropdown('Priority', 'TaskNotes-style priority.', 'priority', ['normal', 'high', 'low']);
+      this.text('Due', 'YYYY-MM-DD deadline.', 'due');
+      this.text('Scheduled', 'YYYY-MM-DD planned work date.', 'scheduled');
+      this.text('Contexts', 'Comma-separated contexts, for example Work, Calls, Admin.', 'contexts');
+      this.text('Client', 'Optional linked client/org note name.', 'client');
+      this.text('Property', 'Optional linked property note name.', 'property');
+      this.text('People', 'Comma-separated people names.', 'people');
+      this.text('Projects', 'Comma-separated project names.', 'projects');
+      this.dropdown('Recurrent', 'Whether this task repeats.', 'recurrent', ['false', 'true']);
+      this.text('Recurrence', 'weekly, daily, monthly, quarterly, yearly, or every 14 days.', 'recurrence');
+    } else if (this.draft.kind === 'client') {
+      this.text('People', 'Main contacts for this client, comma-separated.', 'people');
+      this.text('Projects', 'Known projects for this client, comma-separated.', 'projects');
+    } else if (this.draft.kind === 'property') {
+      this.text('Client', 'Owner/client/org note name.', 'client');
+      this.text('People', 'People linked to this property, comma-separated.', 'people');
+      this.text('Projects', 'Projects linked to this property, comma-separated.', 'projects');
+    } else if (this.draft.kind === 'person') {
+      this.text('Client', 'Optional employer/client/org note name.', 'client');
+      this.text('Property', 'Optional property note name.', 'property');
+      this.text('Projects', 'Projects linked to this person, comma-separated.', 'projects');
+    } else if (this.draft.kind === 'project') {
+      this.text('Client', 'Optional client/org note name.', 'client');
+      this.text('Property', 'Optional property note name.', 'property');
+      this.text('People', 'Project people, comma-separated.', 'people');
+    } else if (this.draft.kind === 'meeting') {
+      this.text('Client', 'Optional client/org note name.', 'client');
+      this.text('Property', 'Optional property note name.', 'property');
+      this.text('People', 'Meeting attendees, comma-separated.', 'people');
+      this.text('Projects', 'Linked projects, comma-separated.', 'projects');
+      this.text('Tasks', 'Linked tasks, comma-separated.', 'tasks');
     }
-    if (this.draft.kind !== 'client') this.text('Client', 'Client note name', 'client');
-    if (!['client', 'property'].includes(this.draft.kind)) this.text('Property', 'Property note name', 'property');
-    this.text('People', 'Comma-separated names', 'people');
-    if (this.draft.kind !== 'project') this.text('Projects', 'Comma-separated project names', 'projects');
-    if (this.draft.kind === 'meeting') this.text('Tasks', 'Comma-separated task names', 'tasks');
 
     new Setting(contentEl)
-      .setName(this.draft.kind === 'task' ? 'Description' : 'Notes')
+      .setName(this.bodyLabel())
       .addTextArea(text => text
-        .setPlaceholder('Write the starting body...')
+        .setPlaceholder(this.bodyPlaceholder())
         .onChange(value => {
           this.draft.body = value;
         }));
@@ -1612,6 +1665,58 @@ class RecordCreateModal extends Modal {
         .onChange(value => {
           this.draft[key] = value as never;
         }));
+  }
+
+  dropdown(name: string, desc: string, key: keyof RecordDraft, options: string[]) {
+    new Setting(this.contentEl)
+      .setName(name)
+      .setDesc(desc)
+      .addDropdown(dropdown => {
+        for (const option of options) dropdown.addOption(option, option);
+        dropdown.setValue(String(this.draft[key] || options[0]));
+        dropdown.onChange(value => {
+          this.draft[key] = value as never;
+        });
+      });
+  }
+
+  modalTitle() {
+    if (this.draft.kind === 'task') return 'New task';
+    if (this.draft.kind === 'client') return 'New client';
+    if (this.draft.kind === 'property') return 'New property';
+    if (this.draft.kind === 'person') return 'New person';
+    if (this.draft.kind === 'project') return 'New project';
+    return 'New meeting';
+  }
+
+  modalDescription() {
+    if (this.draft.kind === 'task') return 'TaskNotes-style intake with status, priority, dates, contexts, links, recurrence, and description.';
+    if (this.draft.kind === 'client') return 'Create a client or organisation record.';
+    if (this.draft.kind === 'property') return 'Create a property record with client, people, and project links.';
+    if (this.draft.kind === 'person') return 'Create a person/contact record linked to clients, properties, or projects.';
+    if (this.draft.kind === 'project') return 'Create a project record linked to a client, property, and people.';
+    return 'Create meeting notes with links to clients, properties, people, projects, and tasks.';
+  }
+
+  titleHelp() {
+    if (this.draft.kind === 'task') return 'Example: Prop - 1318 City Quay - Review lease.';
+    if (this.draft.kind === 'project') return 'The plugin saves project files as Project - Title.';
+    return 'Required.';
+  }
+
+  bodyLabel() {
+    if (this.draft.kind === 'task') return 'Description';
+    if (this.draft.kind === 'meeting') return 'Meeting notes';
+    return 'Body';
+  }
+
+  bodyPlaceholder() {
+    if (this.draft.kind === 'task') return 'Write the task description...';
+    if (this.draft.kind === 'property') return 'Address, key details, access notes, risks, or property background...';
+    if (this.draft.kind === 'person') return 'Role, contact details, preferences, notes...';
+    if (this.draft.kind === 'project') return 'Objective, scope, next steps, risks...';
+    if (this.draft.kind === 'meeting') return 'Agenda, notes, decisions, actions...';
+    return 'Write the starting body...';
   }
 }
 
@@ -1693,6 +1798,14 @@ class RealEstateManagementSettingTab extends PluginSettingTab {
     containerEl.createEl('p', {
       text: 'Set vault-relative folders for independent Real Estate Management records. Existing TaskNotes-style task files can still be read as legacy records.',
     });
+
+    new Setting(containerEl)
+      .setName('Create missing folders')
+      .setDesc('Creates the configured folders inside this vault. Useful when starting a clean test vault.')
+      .addButton(button => button
+        .setButtonText('Create folders')
+        .setCta()
+        .onClick(() => this.plugin.ensureConfiguredFolders()));
 
     this.folderSetting('Tasks folder', 'Native task records.', 'tasksFolder');
     this.folderSetting('Done folder', 'Optional completed task records.', 'doneFolder');

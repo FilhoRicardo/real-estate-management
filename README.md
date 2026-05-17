@@ -14,7 +14,9 @@ Milestone 1 now establishes the independent plugin core:
 - Creates native records using `remType`.
 - Creates/opens today's daily log.
 - Shows a dashboard for tasks, clients, properties, people, projects, meetings, and daily logs.
+- Provides first-run folder setup from the dashboard and settings page.
 - Reads older TaskNotes-style task files as legacy compatibility records.
+- Adds type-specific creation forms for tasks, clients, properties, people, projects, and meetings.
 - Shows a task detail panel with description and notes.
 - Adds task notes through `app.vault.process`.
 - Supports due/scheduled edits, postpone one week, and close task.

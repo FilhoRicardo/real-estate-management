@@ -28,6 +28,7 @@ Turn the proven TaskDash workflows into an Obsidian-native plugin:
 12. Add meeting-specific quick capture from the current task or selected record. Done.
 13. Add richer body editing and backup-before-write safety. Done.
 14. Add daily and weekly time summaries from clock events. Done.
-15. Add repair actions, saved views, and stronger recurrence rules.
+15. Improve first-run folder setup, dashboard presentation, and type-specific create forms. Done.
+16. Add repair actions, saved views, and stronger recurrence rules.
 
 The existing Vercel web app remains the stable production version until this plugin is useful.
