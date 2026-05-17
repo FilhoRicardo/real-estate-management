@@ -118,6 +118,11 @@
   border-color: var(--interactive-accent);
 }
 
+.rem-task-row.is-selected {
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+
 .rem-task-title {
   font-weight: 700;
   line-height: 1.35;
@@ -134,4 +139,92 @@
 
 .rem-modal textarea {
   min-height: 120px;
+}
+
+.rem-task-detail {
+  background: var(--background-primary-alt);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  margin-bottom: 18px;
+  padding: 14px;
+}
+
+.rem-task-detail-header {
+  align-items: flex-start;
+  border-bottom: 1px solid var(--background-modifier-border);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+}
+
+.rem-task-detail-header h3 {
+  margin: 4px 0 0;
+}
+
+.rem-task-detail-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(280px, 0.95fr) minmax(280px, 1.05fr);
+}
+
+.rem-panel {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.rem-panel h4 {
+  margin: 0 0 10px;
+}
+
+.rem-description,
+.rem-note-text {
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.rem-note-editor {
+  align-items: stretch;
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.rem-note-editor textarea {
+  min-height: 78px;
+  resize: vertical;
+  width: 100%;
+}
+
+.rem-note-editor button {
+  align-self: stretch;
+}
+
+.rem-note-list {
+  display: grid;
+  gap: 8px;
+}
+
+.rem-note-card {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 9px 10px;
+}
+
+.rem-note-date {
+  color: var(--text-accent);
+  font-size: var(--font-ui-smaller);
+  font-weight: 800;
+  margin-bottom: 5px;
+}
+
+@media (max-width: 900px) {
+  .rem-task-detail-grid {
+    grid-template-columns: 1fr;
+  }
 }

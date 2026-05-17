@@ -53,6 +53,9 @@ interface RemRecord {
   projects: string[];
   tasks: string[];
   legacy: boolean;
+  description: string;
+  notes: { date: string; text: string }[];
+  raw: string;
 }
 
 interface RecordDraft {
@@ -172,6 +175,9 @@ function parseRecord(file: TFile, text: string, settings: RealEstateManagementSe
       projects: task.projects || [],
       tasks: [],
       legacy: true,
+      description: taskDescriptionText(text),
+      notes: task.logs || [],
+      raw: text,
     };
   }
 
@@ -190,7 +196,88 @@ function parseRecord(file: TFile, text: string, settings: RealEstateManagementSe
     projects: asArray(fm.projects || fm.project),
     tasks: asArray(fm.tasks || fm.task),
     legacy: !fm.remType,
+    description: kind === 'task' ? taskDescriptionText(text) : '',
+    notes: parseDatedLogs(text),
+    raw: text,
   };
+}
+
+function sectionBody(text: string, heading: string) {
+  const rx = new RegExp(`(^|\\n)##\\s+${heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[ \\t]*(?=\\n|$)`, 'i');
+  const match = rx.exec(text);
+  if (!match) return '';
+  const start = match.index + match[0].length;
+  const rest = text.slice(start);
+  const nextHeading = rest.search(/\n##\s+/);
+  const nextSeparator = rest.search(/\n---[ \t]*(?=\n|$)/);
+  const candidates = [nextHeading, nextSeparator].filter(index => index >= 0);
+  const end = candidates.length ? Math.min(...candidates) : rest.length;
+  return rest.slice(0, end).trim();
+}
+
+function taskDescriptionText(text: string) {
+  const explicit = sectionBody(text, 'Description');
+  if (explicit) return explicit;
+  const withoutFrontmatter = text.replace(/^---\n[\s\S]*?\n---\n?/, '');
+  return withoutFrontmatter
+    .split(/\n### (?:\[\[)?\d{4}-\d{2}-\d{2}/)[0]
+    .replace(/^#\s+.+\n?/, '')
+    .replace(/^#{1,6}\s+Task descri(?:p)?tion\s*\n?/i, '')
+    .trim();
+}
+
+function parseDatedLogs(text: string) {
+  const logs: { date: string; text: string }[] = [];
+  const rx = /(^|\n)### (?:\[\[)?(\d{4}-\d{2}-\d{2})(?:\]\])?[ \t]*(?=\n|$)/g;
+  const headers = [...text.matchAll(rx)].map(match => ({
+    date: match[2],
+    start: match.index + match[1].length,
+    end: match.index + match[0].length,
+  }));
+
+  headers.forEach((header, index) => {
+    const section = text.slice(header.end, headers[index + 1]?.start ?? text.length);
+    [...section.matchAll(/^Log:\s*([\s\S]*?)(?=\nLog:\s|\n---[ \t]*(?=\n|$)|$)/gm)]
+      .forEach(match => {
+        const body = match[1].trim();
+        if (body) logs.push({ date: header.date, text: body });
+      });
+  });
+
+  return logs.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function timeLabel(date = new Date()) {
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function appendDatedLog(text: string, note: string) {
+  const date = today();
+  const line = `Log: [${timeLabel()}] ${note.trim()}`;
+  const header = `### [[${date}]]`;
+  const existingHeader = new RegExp(`(^|\\n)### (?:\\[\\[)?${date}(?:\\]\\])?[ \\t]*(?=\\n|$)`).exec(text);
+
+  if (existingHeader) {
+    const start = existingHeader.index + existingHeader[0].length;
+    const rest = text.slice(start);
+    const nextHeader = rest.search(/\n### (?:\[\[)?\d{4}-\d{2}-\d{2}/);
+    const sectionEnd = nextHeader === -1 ? text.length : start + nextHeader;
+    const section = text.slice(start, sectionEnd);
+    const separator = section.search(/\n---[ \t]*(?=\n|$)/);
+    if (separator !== -1) {
+      const insertAt = start + separator;
+      return `${text.slice(0, insertAt).trimEnd()}\n${line}\n\n${text.slice(insertAt).replace(/^\n+/, '')}`;
+    }
+    return `${text.slice(0, sectionEnd).trimEnd()}\n${line}\n\n---\n${text.slice(sectionEnd).replace(/^\n+/, '')}`;
+  }
+
+  const block = `\n\n${header}\n${line}\n\n---\n`;
+  const notesHeading = /(^|\n)##\s+Notes[ \t]*(?=\n|$)/i.exec(text);
+  if (notesHeading) {
+    const start = notesHeading.index + notesHeading[0].length;
+    return `${text.slice(0, start).trimEnd()}${block}${text.slice(start).replace(/^\n+/, '')}`;
+  }
+  return `${text.trimEnd()}\n\n## Notes${block}`;
 }
 
 function yamlList(items: string[]) {
@@ -330,6 +417,14 @@ export default class RealEstateManagementPlugin extends Plugin {
     await this.app.workspace.getLeaf(false).openFile(file);
   }
 
+  async addTaskNote(file: TFile, note: string) {
+    const clean = note.trim();
+    if (!clean) return;
+    await this.app.vault.process(file, current => appendDatedLog(current, clean));
+    new Notice('Task note added');
+    this.refreshViews();
+  }
+
   async openDailyLog(date = today()) {
     await this.ensureFolder(this.settings.dailyFolder);
     const path = `${normalisePath(this.settings.dailyFolder)}/${date}.md`;
@@ -359,6 +454,8 @@ export default class RealEstateManagementPlugin extends Plugin {
 
 class RealEstateManagementView extends ItemView {
   plugin: RealEstateManagementPlugin;
+  selectedTaskPath = '';
+  noteDraft = '';
 
   constructor(leaf: WorkspaceLeaf, plugin: RealEstateManagementPlugin) {
     super(leaf);
@@ -382,7 +479,7 @@ class RealEstateManagementView extends ItemView {
   }
 
   async render() {
-    const root = this.containerEl.children[1];
+    const root = this.containerEl.children[1] as HTMLElement;
     root.empty();
     root.addClass('rem-plugin-root');
 
@@ -393,6 +490,8 @@ class RealEstateManagementView extends ItemView {
     const todayTasks = openTasks.filter(task => task.due === today() || task.scheduled === today());
     const overdueTasks = openTasks.filter(task => !!task.due && task.due < today());
     const daily = byKind('daily').find(record => record.date === today());
+    const selectedTask = tasks.find(task => task.file.path === this.selectedTaskPath) || todayTasks[0] || openTasks[0];
+    if (selectedTask) this.selectedTaskPath = selectedTask.file.path;
 
     const header = root.createDiv({ cls: 'rem-header rem-hero' });
     const titleBlock = header.createDiv();
@@ -422,6 +521,8 @@ class RealEstateManagementView extends ItemView {
     this.stat(stats, 'People', String(byKind('person').length));
     this.stat(stats, 'Projects', String(byKind('project').length));
     this.stat(stats, 'Meetings', String(byKind('meeting').length));
+
+    if (selectedTask) this.taskDetail(root, selectedTask);
 
     const grid = root.createDiv({ cls: 'rem-dashboard-grid' });
     this.taskSection(grid, 'Today', todayTasks, 'No tasks due or scheduled today.');
@@ -466,7 +567,16 @@ class RealEstateManagementView extends ItemView {
 
   recordRow(parent: HTMLElement, record: RemRecord) {
     const row = parent.createDiv({ cls: 'rem-task-row' });
-    row.addEventListener('click', () => this.app.workspace.getLeaf(false).openFile(record.file));
+    if (record.kind === 'task') {
+      if (record.file.path === this.selectedTaskPath) row.addClass('is-selected');
+      row.addEventListener('click', () => {
+        this.selectedTaskPath = record.file.path;
+        this.noteDraft = '';
+        this.render();
+      });
+    } else {
+      row.addEventListener('click', () => this.app.workspace.getLeaf(false).openFile(record.file));
+    }
     row.createDiv({ text: record.title, cls: 'rem-task-title' });
     const meta = row.createDiv({ cls: 'rem-task-meta' });
     meta.createSpan({ text: record.kind });
@@ -477,6 +587,71 @@ class RealEstateManagementView extends ItemView {
     if (record.scheduled) meta.createSpan({ text: `scheduled ${record.scheduled}` });
     if (record.client) meta.createSpan({ text: record.client });
     if (record.property) meta.createSpan({ text: record.property });
+  }
+
+  taskDetail(parent: HTMLElement, task: RemRecord) {
+    const detail = parent.createDiv({ cls: 'rem-task-detail' });
+    const header = detail.createDiv({ cls: 'rem-task-detail-header' });
+    const titleBlock = header.createDiv();
+    titleBlock.createEl('div', { text: task.legacy ? 'Legacy TaskNotes task' : 'Native real estate task', cls: 'rem-kicker' });
+    titleBlock.createEl('h3', { text: task.title });
+    const meta = titleBlock.createDiv({ cls: 'rem-task-meta' });
+    meta.createSpan({ text: task.status || 'open' });
+    meta.createSpan({ text: task.priority || 'normal' });
+    if (task.due) meta.createSpan({ text: `due ${task.due}` });
+    if (task.scheduled) meta.createSpan({ text: `scheduled ${task.scheduled}` });
+    if (task.client) meta.createSpan({ text: task.client });
+    if (task.property) meta.createSpan({ text: task.property });
+
+    const openButton = header.createEl('button', { text: 'Open file' });
+    openButton.addEventListener('click', () => this.app.workspace.getLeaf(false).openFile(task.file));
+
+    const body = detail.createDiv({ cls: 'rem-task-detail-grid' });
+    const description = body.createDiv({ cls: 'rem-panel' });
+    description.createEl('h4', { text: 'Description' });
+    description.createDiv({ text: task.description || 'No description yet.', cls: task.description ? 'rem-description' : 'rem-empty' });
+
+    const notes = body.createDiv({ cls: 'rem-panel' });
+    notes.createEl('h4', { text: 'Notes' });
+    const editor = notes.createDiv({ cls: 'rem-note-editor' });
+    const textarea = editor.createEl('textarea', {
+      text: this.noteDraft,
+      attr: {
+        placeholder: 'Add a task note... Enter to save, Shift+Enter for a new line',
+      },
+    });
+    textarea.value = this.noteDraft;
+    textarea.addEventListener('input', () => {
+      this.noteDraft = textarea.value;
+    });
+    textarea.addEventListener('keydown', async event => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        await this.saveTaskNote(task);
+      }
+    });
+    const save = editor.createEl('button', { text: 'Add' });
+    save.addEventListener('click', () => this.saveTaskNote(task));
+
+    if (!task.notes.length) {
+      notes.createDiv({ text: 'No notes yet.', cls: 'rem-empty' });
+      return;
+    }
+
+    const list = notes.createDiv({ cls: 'rem-note-list' });
+    for (const note of task.notes.slice().reverse().slice(0, 12)) {
+      const card = list.createDiv({ cls: 'rem-note-card' });
+      card.createDiv({ text: note.date, cls: 'rem-note-date' });
+      card.createDiv({ text: note.text, cls: 'rem-note-text' });
+    }
+  }
+
+  async saveTaskNote(task: RemRecord) {
+    const note = this.noteDraft.trim();
+    if (!note) return;
+    await this.plugin.addTaskNote(task.file, note);
+    this.noteDraft = '';
+    await this.render();
   }
 }
 
