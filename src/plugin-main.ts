@@ -429,6 +429,43 @@ function recordReferences(candidate: RemRecord, target: RemRecord) {
   ], aliases);
 }
 
+function folderExists(app: App, folder: string) {
+  const clean = normalisePath(folder);
+  return !!clean && !!app.vault.getAbstractFileByPath(clean);
+}
+
+function buildHealthIssues(app: App, settings: RealEstateManagementSettings, records: RemRecord[]) {
+  const issues: { level: 'error' | 'warning' | 'info'; text: string }[] = [];
+  const folders: [keyof RealEstateManagementSettings, string][] = [
+    ['tasksFolder', 'Tasks folder'],
+    ['clientsFolder', 'Clients folder'],
+    ['propertiesFolder', 'Properties folder'],
+    ['peopleFolder', 'People folder'],
+    ['projectsFolder', 'Projects folder'],
+    ['meetingsFolder', 'Meetings folder'],
+    ['dailyFolder', 'Daily logs folder'],
+  ];
+
+  for (const [key, label] of folders) {
+    if (!folderExists(app, settings[key])) issues.push({ level: key === 'tasksFolder' ? 'error' : 'warning', text: `${label} does not exist: ${settings[key]}` });
+  }
+
+  const duplicateTitles = new Map<string, RemRecord[]>();
+  for (const record of records) {
+    const key = `${record.kind}:${record.title.trim().toLowerCase()}`;
+    duplicateTitles.set(key, [...(duplicateTitles.get(key) || []), record]);
+    if (record.kind === 'task' && !record.date) issues.push({ level: 'info', text: `Task has no created/date field: ${record.title}` });
+    if (record.kind === 'task' && record.due && !/^\d{4}-\d{2}-\d{2}$/.test(record.due)) issues.push({ level: 'warning', text: `Task has invalid due date: ${record.title}` });
+    if (record.kind === 'task' && record.scheduled && !/^\d{4}-\d{2}-\d{2}$/.test(record.scheduled)) issues.push({ level: 'warning', text: `Task has invalid scheduled date: ${record.title}` });
+  }
+
+  for (const group of duplicateTitles.values()) {
+    if (group.length > 1) issues.push({ level: 'warning', text: `Duplicate ${group[0].kind} title "${group[0].title}" appears ${group.length} times.` });
+  }
+
+  return issues;
+}
+
 function yamlList(items: string[]) {
   if (!items.length) return '[]';
   return `\n${items.map(item => `  - "${item.replace(/"/g, '\\"')}"`).join('\n')}`;
@@ -737,6 +774,7 @@ class RealEstateManagementView extends ItemView {
     const selectedTask = tasks.find(task => task.file.path === this.selectedTaskPath) || todayTasks[0] || openTasks[0];
     if (selectedTask) this.selectedTaskPath = selectedTask.file.path;
     const selectedRecord = records.find(record => record.file.path === this.selectedRecordPath && record.kind !== 'task');
+    const healthIssues = buildHealthIssues(this.app, this.plugin.settings, allRecords);
 
     const header = root.createDiv({ cls: 'rem-header rem-hero' });
     const titleBlock = header.createDiv();
@@ -778,8 +816,10 @@ class RealEstateManagementView extends ItemView {
     this.stat(stats, 'People', String(byKind('person').length));
     this.stat(stats, 'Projects', String(byKind('project').length));
     this.stat(stats, 'Meetings', String(byKind('meeting').length));
+    this.stat(stats, 'Health', healthIssues.length ? String(healthIssues.length) : 'OK');
     if (this.searchQuery.trim()) this.stat(stats, 'Search results', String(records.length));
 
+    this.healthPanel(root, healthIssues);
     if (selectedTask) this.taskDetail(root, selectedTask);
     this.dailyPanel(root, daily);
     if (selectedRecord) this.recordDetail(root, selectedRecord, records);
@@ -822,6 +862,19 @@ class RealEstateManagementView extends ItemView {
     const card = parent.createDiv({ cls: 'rem-stat' });
     card.createDiv({ text: label, cls: 'rem-stat-label' });
     card.createDiv({ text: value, cls: 'rem-stat-value' });
+  }
+
+  healthPanel(parent: HTMLElement, issues: { level: 'error' | 'warning' | 'info'; text: string }[]) {
+    if (!issues.length) return;
+    const panel = parent.createDiv({ cls: 'rem-health-panel' });
+    const header = panel.createDiv({ cls: 'rem-health-header' });
+    header.createEl('h3', { text: 'Health checks' });
+    header.createSpan({ text: `${issues.length} item${issues.length === 1 ? '' : 's'}` });
+    for (const issue of issues.slice(0, 8)) {
+      const row = panel.createDiv({ cls: `rem-health-row is-${issue.level}` });
+      row.createSpan({ text: issue.level.toUpperCase(), cls: 'rem-health-level' });
+      row.createSpan({ text: issue.text });
+    }
   }
 
   taskSection(parent: HTMLElement, title: string, tasks: RemRecord[], empty: string) {
