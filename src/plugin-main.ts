@@ -349,6 +349,31 @@ function appendSectionBullet(text: string, heading: string, value: string) {
   return `${text.slice(0, sectionEnd).trimEnd()}\n${bullet}\n${text.slice(sectionEnd)}`;
 }
 
+function appendTimeClockEvent(text: string, event: string) {
+  const row = `| ${timeLabel()} | ${event} |`;
+  const heading = /(^|\n)##\s+Time Clock[ \t]*(?=\n|$)/i.exec(text);
+  if (!heading) {
+    return `${text.trimEnd()}\n\n## Time Clock\n\n| Time | Event |\n| --- | --- |\n${row}\n\n---\n`;
+  }
+
+  const start = heading.index + heading[0].length;
+  const rest = text.slice(start);
+  const nextHeading = rest.search(/\n##\s+/);
+  const sectionEnd = nextHeading === -1 ? text.length : start + nextHeading;
+  const section = text.slice(start, sectionEnd);
+
+  if (!/\|\s*Time\s*\|\s*Event\s*\|/i.test(section)) {
+    return `${text.slice(0, start).trimEnd()}\n\n| Time | Event |\n| --- | --- |\n${row}\n\n---\n${text.slice(sectionEnd).replace(/^\n+/, '')}`;
+  }
+
+  const separator = section.search(/\n---[ \t]*(?=\n|$)/);
+  if (separator !== -1) {
+    const insertAt = start + separator;
+    return `${text.slice(0, insertAt).trimEnd()}\n${row}\n\n${text.slice(insertAt).replace(/^\n+/, '')}`;
+  }
+  return `${text.slice(0, sectionEnd).trimEnd()}\n${row}\n\n---\n${text.slice(sectionEnd).replace(/^\n+/, '')}`;
+}
+
 function ensureFrontmatter(text: string) {
   return /^---\n[\s\S]*?\n---/.test(text) ? text : `---\n---\n\n${text.trimStart()}`;
 }
@@ -643,6 +668,13 @@ export default class RealEstateManagementPlugin extends Plugin {
     this.refreshViews();
   }
 
+  async addDailyTimeClockEvent(event: string) {
+    const file = await this.dailyLogFile();
+    await this.app.vault.process(file, current => appendTimeClockEvent(current, event));
+    new Notice(`${event} saved`);
+    this.refreshViews();
+  }
+
   async loadRecords(): Promise<RemRecord[]> {
     const records: RemRecord[] = [];
     for (const file of this.app.vault.getMarkdownFiles()) {
@@ -923,6 +955,18 @@ class RealEstateManagementView extends ItemView {
       ['Reflections', sectionBody(daily?.raw || '', 'Reflections')],
       ['Brain dump', sectionBody(daily?.raw || '', 'Brain dump')],
     ] as const;
+
+    const clock = panel.createDiv({ cls: 'rem-time-clock-panel' });
+    const clockHeader = clock.createDiv({ cls: 'rem-time-clock-header' });
+    clockHeader.createEl('h4', { text: 'Time Clock' });
+    const clockActions = clockHeader.createDiv({ cls: 'rem-time-clock-actions' });
+    for (const event of ['Clock in', 'Break start', 'Break finish', 'Clock out']) {
+      clockActions.createEl('button', { text: event }).addEventListener('click', () => this.plugin.addDailyTimeClockEvent(event));
+    }
+    clock.createDiv({
+      text: sectionBody(daily?.raw || '', 'Time Clock') || 'No time events yet.',
+      cls: daily ? 'rem-description rem-time-clock-body' : 'rem-empty',
+    });
 
     const grid = panel.createDiv({ cls: 'rem-daily-grid' });
     for (const [section, body] of sections) {

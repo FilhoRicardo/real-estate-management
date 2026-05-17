@@ -355,6 +355,38 @@
   width: 100%;
 }
 
+.rem-time-clock-panel {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  padding: 12px;
+}
+
+.rem-time-clock-header {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.rem-time-clock-header h4 {
+  margin: 0;
+}
+
+.rem-time-clock-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: flex-end;
+}
+
+.rem-time-clock-body {
+  max-height: 130px;
+  overflow: auto;
+}
+
 @media (max-width: 900px) {
   .rem-task-detail-grid,
   .rem-record-detail-grid {

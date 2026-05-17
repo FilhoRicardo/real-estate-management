@@ -21,8 +21,13 @@ Milestone 1 now establishes the independent plugin core:
 - Shows detail panels for clients, properties, people, projects, and meetings.
 - Shows linked tasks, meetings, projects, people, and properties.
 - Adds a daily log panel for Mission, Notes, Reflections, and Brain dump.
+- Adds dashboard search across record types and metadata.
+- Adds notes to client, property, person, project, and meeting detail panels.
+- Adds metadata editing for client, property, person, project, and meeting records.
+- Adds recurrent task metadata and a Finish instance action.
+- Adds basic daily time clock buttons for Clock in, Break start, Break finish, and Clock out.
 
-Recurrence, property comments, richer record editing, meeting-specific workflows, and time tracking have not been migrated yet.
+Meeting-specific workflows, richer body editing, and advanced time summaries have not been migrated yet.
 
 ## Development
 
@@ -84,13 +89,12 @@ Supported `remType` values:
 
 ## Suggested Migration Roadmap
 
-1. Add richer record editing for clients, properties, people, projects, and meetings.
-2. Add property comments using the same dated-log pattern as tasks.
-3. Add recurrent task instance handling.
-4. Add meeting-specific start/stop and linked action capture.
-5. Port daily-log time tracking.
-6. Add safety tools: pre-write conflict checks, restorable backups, and skipped-file diagnostics.
-7. Add search and saved filters across every record layer.
+1. Add meeting-specific start/stop and linked action capture.
+2. Add richer body editing for non-task records.
+3. Add daily time totals and weekly target summaries.
+4. Add safety tools: pre-write conflict checks, restorable backups, and skipped-file diagnostics.
+5. Add saved filters across every record layer.
+6. Improve recurrence rules beyond simple day intervals.
 
 ## Why Plugin
 
