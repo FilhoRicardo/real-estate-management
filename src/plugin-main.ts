@@ -597,6 +597,7 @@ class RealEstateManagementView extends ItemView {
   noteDraft = '';
   recordNoteDrafts: Record<string, string> = {};
   dailyDrafts: Record<string, string> = {};
+  searchQuery = '';
 
   constructor(leaf: WorkspaceLeaf, plugin: RealEstateManagementPlugin) {
     super(leaf);
@@ -624,7 +625,8 @@ class RealEstateManagementView extends ItemView {
     root.empty();
     root.addClass('rem-plugin-root');
 
-    const records = await this.plugin.loadRecords();
+    const allRecords = await this.plugin.loadRecords();
+    const records = this.filterRecords(allRecords);
     const byKind = (kind: RecordKind) => records.filter(record => record.kind === kind);
     const tasks = byKind('task');
     const openTasks = tasks.filter(task => task.status !== 'done' && !isInFolder(task.file, this.plugin.settings.doneFolder));
@@ -642,6 +644,18 @@ class RealEstateManagementView extends ItemView {
     titleBlock.createEl('p', {
       text: 'Independent Obsidian records for tasks, clients, properties, people, projects, meetings, and daily logs.',
       cls: 'rem-subtitle',
+    });
+    const search = titleBlock.createEl('input', {
+      cls: 'rem-search',
+      attr: {
+        placeholder: 'Search tasks, clients, properties, people, projects, meetings...',
+        type: 'search',
+      },
+    });
+    search.value = this.searchQuery;
+    search.addEventListener('input', () => {
+      this.searchQuery = search.value;
+      this.render();
     });
 
     const actions = header.createDiv({ cls: 'rem-actions rem-action-grid' });
@@ -663,6 +677,7 @@ class RealEstateManagementView extends ItemView {
     this.stat(stats, 'People', String(byKind('person').length));
     this.stat(stats, 'Projects', String(byKind('project').length));
     this.stat(stats, 'Meetings', String(byKind('meeting').length));
+    if (this.searchQuery.trim()) this.stat(stats, 'Search results', String(records.length));
 
     if (selectedTask) this.taskDetail(root, selectedTask);
     this.dailyPanel(root, daily);
@@ -679,6 +694,27 @@ class RealEstateManagementView extends ItemView {
 
   action(parent: HTMLElement, label: string, callback: () => void) {
     parent.createEl('button', { text: label }).addEventListener('click', callback);
+  }
+
+  filterRecords(records: RemRecord[]) {
+    const query = this.searchQuery.trim().toLowerCase();
+    if (!query) return records;
+    return records.filter(record => [
+      record.kind,
+      record.title,
+      record.file.basename,
+      record.status,
+      record.priority,
+      record.due,
+      record.scheduled,
+      record.date,
+      record.client,
+      record.property,
+      ...record.people,
+      ...record.projects,
+      ...record.tasks,
+      record.body,
+    ].filter(Boolean).some(value => String(value).toLowerCase().includes(query)));
   }
 
   stat(parent: HTMLElement, label: string, value: string) {

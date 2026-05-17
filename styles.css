@@ -26,6 +26,12 @@
   max-width: 640px;
 }
 
+.rem-search {
+  margin-top: 12px;
+  max-width: 640px;
+  width: 100%;
+}
+
 .rem-kicker {
   color: var(--text-accent);
   font-size: var(--font-ui-smaller);
