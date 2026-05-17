@@ -26,6 +26,7 @@ Turn the proven TaskDash workflows into an Obsidian-native plugin:
 10. Add recurrent task metadata and finish-instance handling. Done.
 11. Add basic daily time clock buttons. Done.
 12. Add meeting-specific quick capture from the current task or selected record. Done.
-13. Add richer body editing, advanced time summaries, and safety tools.
+13. Add richer body editing and backup-before-write safety. Done.
+14. Add advanced time summaries, repair actions, and saved views.
 
 The existing Vercel web app remains the stable production version until this plugin is useful.

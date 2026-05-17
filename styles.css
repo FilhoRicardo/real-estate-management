@@ -294,6 +294,35 @@
   white-space: pre-wrap;
 }
 
+.rem-body-preview {
+  margin-bottom: 12px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.rem-body-preview.is-dirty {
+  border-left: 3px solid var(--interactive-accent);
+  padding-left: 9px;
+}
+
+.rem-body-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.rem-body-editor textarea {
+  min-height: 160px;
+  resize: vertical;
+  width: 100%;
+}
+
+.rem-body-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .rem-note-editor {
   align-items: stretch;
   display: flex;

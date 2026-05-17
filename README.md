@@ -27,8 +27,10 @@ Milestone 1 now establishes the independent plugin core:
 - Adds recurrent task metadata and a Finish instance action.
 - Adds basic daily time clock buttons for Clock in, Break start, Break finish, and Clock out.
 - Adds a quick meeting capture panel that creates linked meeting notes from the current task or selected record.
+- Adds editable body/description panels for tasks, clients, properties, people, projects, and meetings.
+- Creates dated backup copies before modifying existing notes through the plugin.
 
-Richer body editing and advanced time summaries have not been migrated yet.
+Advanced time summaries and repair actions have not been migrated yet.
 
 ## Development
 
@@ -90,11 +92,20 @@ Supported `remType` values:
 
 ## Suggested Migration Roadmap
 
-1. Add richer body editing for non-task records.
-2. Add daily time totals and weekly target summaries.
-3. Add safety tools: pre-write conflict checks, restorable backups, and skipped-file diagnostics.
-4. Add saved filters across every record layer.
-5. Improve recurrence rules beyond simple day intervals.
+1. Add daily time totals and weekly target summaries.
+2. Add safety tools: pre-write conflict checks, repair actions, and skipped-file diagnostics.
+3. Add saved filters across every record layer.
+4. Improve recurrence rules beyond simple day intervals.
+
+## Backup Behavior
+
+Before the plugin edits an existing note, it writes a copy to:
+
+```text
+Real Estate Management/Backups/YYYY-MM-DD/
+```
+
+The dashboard ignores those backup files so they do not appear as duplicate records.
 
 ## Why Plugin
 

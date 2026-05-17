@@ -133,7 +133,10 @@ function safeFilename(title: string) {
 
 function isIgnoredFile(file: TFile) {
   const base = file.basename.trim().toLowerCase();
-  return base === 'index' || base.startsWith('_') || file.name === 'timetracker.md';
+  return base === 'index'
+    || base.startsWith('_')
+    || file.name === 'timetracker.md'
+    || file.path.startsWith('Real Estate Management/Backups/');
 }
 
 function isInFolder(file: TFile, folder: string) {
@@ -415,6 +418,55 @@ function updateFrontmatterScalars(text: string, fields: Record<string, string>) 
   return Object.entries(fields).reduce((next, [key, value]) => setFrontmatterScalar(next, key, value), text);
 }
 
+function replaceSectionBody(text: string, heading: string, body: string) {
+  const clean = body.trim();
+  const rx = new RegExp(`(^|\\n)##\\s+${heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[ \\t]*(?=\\n|$)`, 'i');
+  const match = rx.exec(text);
+  if (!match) return null;
+  const start = match.index + match[0].length;
+  const rest = text.slice(start);
+  const next = rest.search(/\n(?:##\s+|---[ \t]*(?=\n|$))/);
+  const end = next === -1 ? text.length : start + next;
+  return `${text.slice(0, start).trimEnd()}\n\n${clean}\n\n${text.slice(end).replace(/^\n+/, '')}`;
+}
+
+function replaceTaskDescription(text: string, body: string) {
+  const replaced = replaceSectionBody(text, 'Description', body);
+  if (replaced) return updateFrontmatterScalars(replaced, { modified: today(), dateModified: today() });
+
+  const clean = body.trim();
+  const heading = /^---\n[\s\S]*?\n---\n?/m.exec(text);
+  const bodyStart = heading ? heading.index + heading[0].length : 0;
+  const title = /^#\s+.+$/m.exec(text.slice(bodyStart));
+  if (title) {
+    const insertAt = bodyStart + title.index + title[0].length;
+    const next = `${text.slice(0, insertAt).trimEnd()}\n\n## Description\n\n${clean}\n\n---\n${text.slice(insertAt).replace(/^\n+/, '')}`;
+    return updateFrontmatterScalars(next, { modified: today(), dateModified: today() });
+  }
+
+  const next = `${text.trimEnd()}\n\n## Description\n\n${clean}\n\n---\n`;
+  return updateFrontmatterScalars(next, { modified: today(), dateModified: today() });
+}
+
+function replaceRecordBody(text: string, kind: RecordKind, body: string) {
+  if (kind === 'task') return replaceTaskDescription(text, body);
+  if (kind === 'meeting') {
+    const notes = replaceSectionBody(text, 'Notes', body);
+    if (notes) return updateFrontmatterScalars(notes, { modified: today(), dateModified: today() });
+  }
+
+  const clean = body.trim();
+  const frontmatter = /^---\n[\s\S]*?\n---\n?/m.exec(text);
+  const bodyStart = frontmatter ? frontmatter.index + frontmatter[0].length : 0;
+  const title = /^#\s+.+$/m.exec(text.slice(bodyStart));
+  const contentStart = title ? bodyStart + title.index + title[0].length : bodyStart;
+  const rest = text.slice(contentStart);
+  const endMatch = rest.search(/\n(?:---[ \t]*(?=\n|$)|##\s+Notes[ \t]*(?=\n|$))/i);
+  const contentEnd = endMatch === -1 ? text.length : contentStart + endMatch;
+  const next = `${text.slice(0, contentStart).trimEnd()}\n\n${clean}\n\n${text.slice(contentEnd).replace(/^\n+/, '')}`;
+  return updateFrontmatterScalars(next, { modified: today(), dateModified: today() });
+}
+
 function linkName(value: string | null | undefined) {
   return String(value || '')
     .replace(/^\[\[/, '')
@@ -660,10 +712,27 @@ export default class RealEstateManagementPlugin extends Plugin {
     });
   }
 
+  async backupFile(file: TFile, text: string) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const folder = `Real Estate Management/Backups/${today()}`;
+    await this.ensureFolder(folder);
+    const backupName = safeFilename(file.path.replace(/\//g, ' - ').replace(/\.md$/i, ''));
+    const path = await this.uniquePath(folder, `${backupName} - ${stamp}`);
+    await this.app.vault.create(path, text);
+  }
+
+  async protectedProcess(file: TFile, update: (current: string) => string) {
+    const current = await this.app.vault.cachedRead(file);
+    const next = update(current);
+    if (next === current) return;
+    await this.backupFile(file, current);
+    await this.app.vault.modify(file, next);
+  }
+
   async addTaskNote(file: TFile, note: string) {
     const clean = note.trim();
     if (!clean) return;
-    await this.app.vault.process(file, current => appendDatedLog(current, clean));
+    await this.protectedProcess(file, current => appendDatedLog(current, clean));
     new Notice('Task note added');
     this.refreshViews();
   }
@@ -671,13 +740,13 @@ export default class RealEstateManagementPlugin extends Plugin {
   async addRecordNote(file: TFile, note: string) {
     const clean = note.trim();
     if (!clean) return;
-    await this.app.vault.process(file, current => appendDatedLog(current, clean));
+    await this.protectedProcess(file, current => appendDatedLog(current, clean));
     new Notice('Record note added');
     this.refreshViews();
   }
 
   async updateTaskFields(file: TFile, fields: Record<string, string>) {
-    await this.app.vault.process(file, current => updateFrontmatterScalars(current, {
+    await this.protectedProcess(file, current => updateFrontmatterScalars(current, {
       ...fields,
       modified: today(),
       dateModified: today(),
@@ -701,8 +770,14 @@ export default class RealEstateManagementPlugin extends Plugin {
     fields.projects = yamlList(splitLinks(draft.projects));
     if (record.kind === 'meeting') fields.tasks = yamlList(splitLinks(draft.tasks));
 
-    await this.app.vault.process(record.file, current => updateFrontmatterScalars(current, fields));
+    await this.protectedProcess(record.file, current => updateFrontmatterScalars(current, fields));
     new Notice('Record metadata updated');
+    this.refreshViews();
+  }
+
+  async updateRecordBody(record: RemRecord, body: string) {
+    await this.protectedProcess(record.file, current => replaceRecordBody(current, record.kind, body));
+    new Notice(record.kind === 'task' ? 'Task description updated' : 'Record body updated');
     this.refreshViews();
   }
 
@@ -757,14 +832,14 @@ export default class RealEstateManagementPlugin extends Plugin {
 
   async appendDailyEntry(section: string, value: string) {
     const file = await this.dailyLogFile();
-    await this.app.vault.process(file, current => appendSectionBullet(current, section, value));
+    await this.protectedProcess(file, current => appendSectionBullet(current, section, value));
     new Notice(`Added to ${section}`);
     this.refreshViews();
   }
 
   async addDailyTimeClockEvent(event: string) {
     const file = await this.dailyLogFile();
-    await this.app.vault.process(file, current => appendTimeClockEvent(current, event));
+    await this.protectedProcess(file, current => appendTimeClockEvent(current, event));
     new Notice(`${event} saved`);
     this.refreshViews();
   }
@@ -790,6 +865,7 @@ class RealEstateManagementView extends ItemView {
   selectedTaskPath = '';
   selectedRecordPath = '';
   noteDraft = '';
+  bodyDrafts: Record<string, string> = {};
   recordNoteDrafts: Record<string, string> = {};
   dailyDrafts: Record<string, string> = {};
   meetingDraft: MeetingCaptureDraft = { title: '', notes: '', startedAt: '' };
@@ -1015,7 +1091,7 @@ class RealEstateManagementView extends ItemView {
     const body = detail.createDiv({ cls: 'rem-task-detail-grid' });
     const description = body.createDiv({ cls: 'rem-panel' });
     description.createEl('h4', { text: 'Description' });
-    description.createDiv({ text: task.description || 'No description yet.', cls: task.description ? 'rem-description' : 'rem-empty' });
+    this.bodyEditor(description, task, task.description, 'Task description');
 
     const notes = body.createDiv({ cls: 'rem-panel' });
     notes.createEl('h4', { text: 'Notes' });
@@ -1211,7 +1287,7 @@ class RealEstateManagementView extends ItemView {
     const grid = detail.createDiv({ cls: 'rem-record-detail-grid' });
     const body = grid.createDiv({ cls: 'rem-panel' });
     body.createEl('h4', { text: 'Record' });
-    body.createDiv({ text: record.body || 'No body yet.', cls: record.body ? 'rem-description' : 'rem-empty' });
+    this.bodyEditor(body, record, record.body, `${record.kind} body`);
 
     const relationships = grid.createDiv({ cls: 'rem-panel' });
     relationships.createEl('h4', { text: 'Linked work' });
@@ -1280,6 +1356,40 @@ class RealEstateManagementView extends ItemView {
     if (!note) return;
     await this.plugin.addRecordNote(record.file, note);
     this.recordNoteDrafts[record.file.path] = '';
+    await this.render();
+  }
+
+  bodyEditor(parent: HTMLElement, record: RemRecord, currentBody: string, label: string) {
+    const draft = this.bodyDrafts[record.file.path] ?? currentBody;
+    const preview = parent.createDiv({
+      text: currentBody || 'No body yet.',
+      cls: currentBody ? 'rem-description rem-body-preview' : 'rem-empty rem-body-preview',
+    });
+    preview.toggleClass('is-dirty', draft !== currentBody);
+
+    const editor = parent.createDiv({ cls: 'rem-body-editor' });
+    const textarea = editor.createEl('textarea', {
+      attr: {
+        placeholder: `Edit ${label.toLowerCase()}...`,
+      },
+    });
+    textarea.value = draft;
+    textarea.addEventListener('input', () => {
+      this.bodyDrafts[record.file.path] = textarea.value;
+    });
+
+    const actions = editor.createDiv({ cls: 'rem-body-actions' });
+    actions.createEl('button', { text: 'Save body' }).addEventListener('click', () => this.saveBody(record));
+    actions.createEl('button', { text: 'Reset' }).addEventListener('click', () => {
+      delete this.bodyDrafts[record.file.path];
+      this.render();
+    });
+  }
+
+  async saveBody(record: RemRecord) {
+    const value = this.bodyDrafts[record.file.path] ?? record.body;
+    await this.plugin.updateRecordBody(record, value);
+    delete this.bodyDrafts[record.file.path];
     await this.render();
   }
 
