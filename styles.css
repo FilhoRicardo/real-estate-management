@@ -149,6 +149,14 @@
   padding: 14px;
 }
 
+.rem-record-detail {
+  background: var(--background-primary-alt);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  margin-bottom: 18px;
+  padding: 14px;
+}
+
 .rem-task-detail-header {
   align-items: flex-start;
   border-bottom: 1px solid var(--background-modifier-border);
@@ -192,6 +200,12 @@
   display: grid;
   gap: 14px;
   grid-template-columns: minmax(280px, 0.95fr) minmax(280px, 1.05fr);
+}
+
+.rem-record-detail-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(280px, 1.1fr);
 }
 
 .rem-panel {
@@ -248,8 +262,38 @@
   margin-bottom: 5px;
 }
 
+.rem-related-group {
+  margin-bottom: 12px;
+}
+
+.rem-related-group h5 {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: 800;
+  margin: 0 0 7px;
+  text-transform: uppercase;
+}
+
+.rem-related-list {
+  display: grid;
+  gap: 6px;
+}
+
+.rem-related-row {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 7px;
+  cursor: pointer;
+  padding: 7px 9px;
+}
+
+.rem-related-row:hover {
+  border-color: var(--interactive-accent);
+}
+
 @media (max-width: 900px) {
-  .rem-task-detail-grid {
+  .rem-task-detail-grid,
+  .rem-record-detail-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -56,6 +56,7 @@ interface RemRecord {
   description: string;
   notes: { date: string; text: string }[];
   raw: string;
+  body: string;
 }
 
 interface RecordDraft {
@@ -185,6 +186,7 @@ function parseRecord(file: TFile, text: string, settings: RealEstateManagementSe
       description: taskDescriptionText(text),
       notes: task.logs || [],
       raw: text,
+      body: taskDescriptionText(text),
     };
   }
 
@@ -206,6 +208,7 @@ function parseRecord(file: TFile, text: string, settings: RealEstateManagementSe
     description: kind === 'task' ? taskDescriptionText(text) : '',
     notes: parseDatedLogs(text),
     raw: text,
+    body: recordBodyText(text, kind),
   };
 }
 
@@ -230,6 +233,15 @@ function taskDescriptionText(text: string) {
     .split(/\n### (?:\[\[)?\d{4}-\d{2}-\d{2}/)[0]
     .replace(/^#\s+.+\n?/, '')
     .replace(/^#{1,6}\s+Task descri(?:p)?tion\s*\n?/i, '')
+    .trim();
+}
+
+function recordBodyText(text: string, kind: RecordKind) {
+  if (kind === 'task') return taskDescriptionText(text);
+  const withoutFrontmatter = text.replace(/^---\n[\s\S]*?\n---\n?/, '');
+  return withoutFrontmatter
+    .replace(/^#\s+.+\n?/, '')
+    .split(/\n---[ \t]*(?=\n|$)/)[0]
     .trim();
 }
 
@@ -306,6 +318,40 @@ function setFrontmatterScalar(text: string, key: string, value: string) {
 
 function updateFrontmatterScalars(text: string, fields: Record<string, string>) {
   return Object.entries(fields).reduce((next, [key, value]) => setFrontmatterScalar(next, key, value), text);
+}
+
+function linkName(value: string | null | undefined) {
+  return String(value || '')
+    .replace(/^\[\[/, '')
+    .replace(/\]\]$/, '')
+    .split('|')[0]
+    .trim()
+    .toLowerCase();
+}
+
+function recordAliases(record: RemRecord) {
+  return new Set([
+    record.title,
+    record.file.basename,
+    `[[${record.title}]]`,
+    `[[${record.file.basename}]]`,
+  ].map(linkName).filter(Boolean));
+}
+
+function valuesReference(values: (string | null | undefined)[], aliases: Set<string>) {
+  return values.some(value => aliases.has(linkName(value)));
+}
+
+function recordReferences(candidate: RemRecord, target: RemRecord) {
+  if (candidate.file.path === target.file.path) return false;
+  const aliases = recordAliases(target);
+  return valuesReference([
+    candidate.client,
+    candidate.property,
+    ...candidate.people,
+    ...candidate.projects,
+    ...candidate.tasks,
+  ], aliases);
 }
 
 function yamlList(items: string[]) {
@@ -509,6 +555,7 @@ export default class RealEstateManagementPlugin extends Plugin {
 class RealEstateManagementView extends ItemView {
   plugin: RealEstateManagementPlugin;
   selectedTaskPath = '';
+  selectedRecordPath = '';
   noteDraft = '';
 
   constructor(leaf: WorkspaceLeaf, plugin: RealEstateManagementPlugin) {
@@ -546,6 +593,7 @@ class RealEstateManagementView extends ItemView {
     const daily = byKind('daily').find(record => record.date === today());
     const selectedTask = tasks.find(task => task.file.path === this.selectedTaskPath) || todayTasks[0] || openTasks[0];
     if (selectedTask) this.selectedTaskPath = selectedTask.file.path;
+    const selectedRecord = records.find(record => record.file.path === this.selectedRecordPath && record.kind !== 'task');
 
     const header = root.createDiv({ cls: 'rem-header rem-hero' });
     const titleBlock = header.createDiv();
@@ -577,6 +625,7 @@ class RealEstateManagementView extends ItemView {
     this.stat(stats, 'Meetings', String(byKind('meeting').length));
 
     if (selectedTask) this.taskDetail(root, selectedTask);
+    if (selectedRecord) this.recordDetail(root, selectedRecord, records);
 
     const grid = root.createDiv({ cls: 'rem-dashboard-grid' });
     this.taskSection(grid, 'Today', todayTasks, 'No tasks due or scheduled today.');
@@ -625,11 +674,16 @@ class RealEstateManagementView extends ItemView {
       if (record.file.path === this.selectedTaskPath) row.addClass('is-selected');
       row.addEventListener('click', () => {
         this.selectedTaskPath = record.file.path;
+        this.selectedRecordPath = '';
         this.noteDraft = '';
         this.render();
       });
     } else {
-      row.addEventListener('click', () => this.app.workspace.getLeaf(false).openFile(record.file));
+      if (record.file.path === this.selectedRecordPath) row.addClass('is-selected');
+      row.addEventListener('click', () => {
+        this.selectedRecordPath = record.file.path;
+        this.render();
+      });
     }
     row.createDiv({ text: record.title, cls: 'rem-task-title' });
     const meta = row.createDiv({ cls: 'rem-task-meta' });
@@ -712,6 +766,63 @@ class RealEstateManagementView extends ItemView {
     await this.plugin.addTaskNote(task.file, note);
     this.noteDraft = '';
     await this.render();
+  }
+
+  recordDetail(parent: HTMLElement, record: RemRecord, records: RemRecord[]) {
+    const related = records.filter(candidate => recordReferences(candidate, record));
+    const relatedTasks = related.filter(item => item.kind === 'task');
+    const relatedMeetings = related.filter(item => item.kind === 'meeting');
+    const relatedProjects = related.filter(item => item.kind === 'project');
+    const relatedPeople = related.filter(item => item.kind === 'person');
+    const relatedProperties = related.filter(item => item.kind === 'property');
+
+    const detail = parent.createDiv({ cls: 'rem-record-detail' });
+    const header = detail.createDiv({ cls: 'rem-task-detail-header' });
+    const titleBlock = header.createDiv();
+    titleBlock.createEl('div', { text: record.kind, cls: 'rem-kicker' });
+    titleBlock.createEl('h3', { text: record.title });
+    const meta = titleBlock.createDiv({ cls: 'rem-task-meta' });
+    if (record.status) meta.createSpan({ text: record.status });
+    if (record.client) meta.createSpan({ text: record.client });
+    if (record.property) meta.createSpan({ text: record.property });
+    if (record.date) meta.createSpan({ text: record.date });
+
+    const openButton = header.createEl('button', { text: 'Open file' });
+    openButton.addEventListener('click', () => this.app.workspace.getLeaf(false).openFile(record.file));
+
+    const grid = detail.createDiv({ cls: 'rem-record-detail-grid' });
+    const body = grid.createDiv({ cls: 'rem-panel' });
+    body.createEl('h4', { text: 'Record' });
+    body.createDiv({ text: record.body || 'No body yet.', cls: record.body ? 'rem-description' : 'rem-empty' });
+
+    const relationships = grid.createDiv({ cls: 'rem-panel' });
+    relationships.createEl('h4', { text: 'Linked work' });
+    this.relatedGroup(relationships, 'Tasks', relatedTasks);
+    this.relatedGroup(relationships, 'Meetings', relatedMeetings);
+    this.relatedGroup(relationships, 'Projects', relatedProjects);
+    this.relatedGroup(relationships, 'People', relatedPeople);
+    this.relatedGroup(relationships, 'Properties', relatedProperties);
+    if (!related.length) relationships.createDiv({ text: 'No linked records found yet.', cls: 'rem-empty' });
+  }
+
+  relatedGroup(parent: HTMLElement, title: string, records: RemRecord[]) {
+    if (!records.length) return;
+    const group = parent.createDiv({ cls: 'rem-related-group' });
+    group.createEl('h5', { text: `${title} (${records.length})` });
+    const list = group.createDiv({ cls: 'rem-related-list' });
+    for (const record of records.slice(0, 8)) {
+      const row = list.createDiv({ cls: 'rem-related-row' });
+      row.createSpan({ text: record.title });
+      row.addEventListener('click', () => {
+        if (record.kind === 'task') {
+          this.selectedTaskPath = record.file.path;
+          this.selectedRecordPath = '';
+        } else {
+          this.selectedRecordPath = record.file.path;
+        }
+        this.render();
+      });
+    }
   }
 
   dateControl(parent: HTMLElement, label: string, value: string, onChange: (value: string) => void) {
