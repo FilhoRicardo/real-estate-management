@@ -26,8 +26,9 @@ Milestone 1 now establishes the independent plugin core:
 - Adds metadata editing for client, property, person, project, and meeting records.
 - Adds recurrent task metadata and a Finish instance action.
 - Adds basic daily time clock buttons for Clock in, Break start, Break finish, and Clock out.
+- Adds a quick meeting capture panel that creates linked meeting notes from the current task or selected record.
 
-Meeting-specific workflows, richer body editing, and advanced time summaries have not been migrated yet.
+Richer body editing and advanced time summaries have not been migrated yet.
 
 ## Development
 
@@ -89,12 +90,11 @@ Supported `remType` values:
 
 ## Suggested Migration Roadmap
 
-1. Add meeting-specific start/stop and linked action capture.
-2. Add richer body editing for non-task records.
-3. Add daily time totals and weekly target summaries.
-4. Add safety tools: pre-write conflict checks, restorable backups, and skipped-file diagnostics.
-5. Add saved filters across every record layer.
-6. Improve recurrence rules beyond simple day intervals.
+1. Add richer body editing for non-task records.
+2. Add daily time totals and weekly target summaries.
+3. Add safety tools: pre-write conflict checks, restorable backups, and skipped-file diagnostics.
+4. Add saved filters across every record layer.
+5. Improve recurrence rules beyond simple day intervals.
 
 ## Why Plugin
 

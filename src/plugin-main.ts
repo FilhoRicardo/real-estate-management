@@ -89,6 +89,12 @@ interface RecordMetadataDraft {
   tasks: string;
 }
 
+interface MeetingCaptureDraft {
+  title: string;
+  notes: string;
+  startedAt: string;
+}
+
 function today() {
   const d = new Date();
   const pad = (value: number) => String(value).padStart(2, '0');
@@ -158,6 +164,20 @@ function splitLinks(value: string) {
 function displayLinks(values: string[]) {
   return values
     .map(value => value.replace(/^\[\[/, '').replace(/\]\]$/, ''))
+    .join(', ');
+}
+
+function uniqueDisplayLinks(values: (string | null | undefined)[]) {
+  const seen = new Set<string>();
+  return values
+    .map(value => String(value || '').replace(/^\[\[/, '').replace(/\]\]$/, '').trim())
+    .filter(value => {
+      if (!value) return false;
+      const key = value.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
     .join(', ');
 }
 
@@ -603,6 +623,43 @@ export default class RealEstateManagementPlugin extends Plugin {
     await this.app.workspace.getLeaf(false).openFile(file);
   }
 
+  async createMeetingFromContext(draft: MeetingCaptureDraft, task?: RemRecord, record?: RemRecord) {
+    const title = draft.title.trim() || `Meeting - ${today()} ${timeLabel().replace(':', '')}`;
+    const people = [...(task?.people || []), ...(record?.people || [])];
+    const projects = [...(task?.projects || []), ...(record?.projects || [])];
+    const tasks = [...(record?.tasks || [])];
+    let client = task?.client || record?.client || '';
+    let property = task?.property || record?.property || '';
+
+    if (task) tasks.push(task.title);
+    if (record?.kind === 'client') client = record.title;
+    if (record?.kind === 'property') property = record.title;
+    if (record?.kind === 'person') people.push(record.title);
+    if (record?.kind === 'project') projects.push(record.title);
+
+    const times = draft.startedAt
+      ? `Started: ${draft.startedAt}\nEnded: ${timeLabel()}`
+      : `Captured: ${timeLabel()}`;
+    const body = [times, draft.notes.trim()].filter(Boolean).join('\n\n');
+
+    await this.createRecord({
+      kind: 'meeting',
+      title,
+      status: 'active',
+      priority: 'normal',
+      due: '',
+      scheduled: '',
+      client: uniqueDisplayLinks([client]),
+      property: uniqueDisplayLinks([property]),
+      people: uniqueDisplayLinks(people),
+      projects: uniqueDisplayLinks(projects),
+      tasks: uniqueDisplayLinks(tasks),
+      body,
+      recurrent: 'false',
+      recurrence: '',
+    });
+  }
+
   async addTaskNote(file: TFile, note: string) {
     const clean = note.trim();
     if (!clean) return;
@@ -735,6 +792,7 @@ class RealEstateManagementView extends ItemView {
   noteDraft = '';
   recordNoteDrafts: Record<string, string> = {};
   dailyDrafts: Record<string, string> = {};
+  meetingDraft: MeetingCaptureDraft = { title: '', notes: '', startedAt: '' };
   searchQuery = '';
 
   constructor(leaf: WorkspaceLeaf, plugin: RealEstateManagementPlugin) {
@@ -822,6 +880,7 @@ class RealEstateManagementView extends ItemView {
     this.healthPanel(root, healthIssues);
     if (selectedTask) this.taskDetail(root, selectedTask);
     this.dailyPanel(root, daily);
+    this.meetingCapturePanel(root, selectedRecord ? undefined : selectedTask, selectedRecord);
     if (selectedRecord) this.recordDetail(root, selectedRecord, records);
 
     const grid = root.createDiv({ cls: 'rem-dashboard-grid' });
@@ -1044,6 +1103,68 @@ class RealEstateManagementView extends ItemView {
       });
       editor.createEl('button', { text: 'Add' }).addEventListener('click', () => this.saveDailyEntry(section));
     }
+  }
+
+  meetingCapturePanel(parent: HTMLElement, task?: RemRecord, record?: RemRecord) {
+    const panel = parent.createDiv({ cls: 'rem-meeting-panel' });
+    const header = panel.createDiv({ cls: 'rem-meeting-header' });
+    const title = header.createDiv();
+    title.createEl('div', { text: 'Meeting capture', cls: 'rem-kicker' });
+    title.createEl('h3', { text: 'Quick meeting note' });
+    const context = record ? `${record.kind}: ${record.title}` : task ? `task: ${task.title}` : 'no selected context';
+    header.createDiv({ text: `Links to ${context}`, cls: 'rem-meeting-context' });
+
+    const form = panel.createDiv({ cls: 'rem-meeting-grid' });
+    const titleInput = form.createEl('input', {
+      attr: {
+        placeholder: 'Optional meeting title',
+        type: 'text',
+      },
+    });
+    titleInput.value = this.meetingDraft.title;
+    titleInput.addEventListener('input', () => {
+      this.meetingDraft.title = titleInput.value;
+    });
+
+    const notes = form.createEl('textarea', {
+      attr: {
+        placeholder: 'Meeting notes... Enter saves, Shift+Enter adds a new line',
+      },
+    });
+    notes.value = this.meetingDraft.notes;
+    notes.addEventListener('input', () => {
+      this.meetingDraft.notes = notes.value;
+    });
+    notes.addEventListener('keydown', async event => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        await this.saveMeetingCapture(task, record);
+      }
+    });
+
+    const actions = form.createDiv({ cls: 'rem-meeting-actions' });
+    actions.createEl('button', { text: this.meetingDraft.startedAt ? `Started ${this.meetingDraft.startedAt}` : 'Start' })
+      .addEventListener('click', () => {
+        this.meetingDraft.startedAt = timeLabel();
+        this.render();
+      });
+    actions.createEl('button', { text: 'Save meeting' }).addEventListener('click', () => this.saveMeetingCapture(task, record));
+    if (this.meetingDraft.startedAt || this.meetingDraft.title || this.meetingDraft.notes) {
+      actions.createEl('button', { text: 'Clear' }).addEventListener('click', () => {
+        this.meetingDraft = { title: '', notes: '', startedAt: '' };
+        this.render();
+      });
+    }
+  }
+
+  async saveMeetingCapture(task?: RemRecord, record?: RemRecord) {
+    if (!this.meetingDraft.title.trim() && !this.meetingDraft.notes.trim() && !this.meetingDraft.startedAt) {
+      new Notice('Add a meeting title, note, or start time first.');
+      return;
+    }
+    await this.plugin.createMeetingFromContext(this.meetingDraft, task, record);
+    this.meetingDraft = { title: '', notes: '', startedAt: '' };
+    await this.render();
   }
 
   async saveDailyEntry(section: string) {

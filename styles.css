@@ -437,9 +437,59 @@
   overflow: auto;
 }
 
+.rem-meeting-panel {
+  background: var(--background-primary-alt);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  margin-bottom: 18px;
+  padding: 14px;
+}
+
+.rem-meeting-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.rem-meeting-header h3 {
+  margin: 4px 0 0;
+}
+
+.rem-meeting-context {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  max-width: 360px;
+  text-align: right;
+}
+
+.rem-meeting-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(180px, 260px) 1fr auto;
+}
+
+.rem-meeting-grid textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+
+.rem-meeting-actions {
+  align-items: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
 @media (max-width: 900px) {
   .rem-task-detail-grid,
-  .rem-record-detail-grid {
+  .rem-record-detail-grid,
+  .rem-meeting-grid {
     grid-template-columns: 1fr;
+  }
+
+  .rem-meeting-context {
+    text-align: left;
   }
 }
