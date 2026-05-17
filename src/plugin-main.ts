@@ -108,6 +108,19 @@ function addDays(date: string, amount: number) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+function startOfWeek(date: string) {
+  const d = new Date(`${date}T12:00:00`);
+  const day = d.getDay() || 7;
+  d.setDate(d.getDate() - day + 1);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function weekDates(date: string) {
+  const start = startOfWeek(date);
+  return Array.from({ length: 7 }, (_, index) => addDays(start, index));
+}
+
 function recurrenceDays(rule: string | null) {
   const lower = String(rule || '').toLowerCase();
   if (lower.includes('daily')) return 1;
@@ -327,6 +340,80 @@ function parseDatedLogs(text: string) {
 
 function timeLabel(date = new Date()) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function parseTimeMinutes(value: string) {
+  const match = value.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+function formatMinutes(minutes: number) {
+  const clean = Math.max(0, Math.round(minutes));
+  const hours = Math.floor(clean / 60);
+  const mins = clean % 60;
+  return `${hours}h ${String(mins).padStart(2, '0')}m`;
+}
+
+function timeClockEvents(text: string) {
+  return [...sectionBody(text, 'Time Clock').matchAll(/\|\s*(\d{1,2}:\d{2})\s*\|\s*([^|]+?)\s*\|/g)]
+    .map(match => ({
+      minute: parseTimeMinutes(match[1]),
+      label: match[2].trim().toLowerCase(),
+      rawLabel: match[2].trim(),
+    }))
+    .filter((event): event is { minute: number; label: string; rawLabel: string } => event.minute !== null)
+    .sort((a, b) => a.minute - b.minute);
+}
+
+function timeClockSummary(text: string, date: string) {
+  let workStart: number | null = null;
+  let breakStart: number | null = null;
+  let total = 0;
+  let breaks = 0;
+  const events = timeClockEvents(text);
+
+  for (const event of events) {
+    if (event.label.includes('clock in')) {
+      workStart = event.minute;
+      breakStart = null;
+    } else if (event.label.includes('break start')) {
+      if (workStart !== null) total += Math.max(0, event.minute - workStart);
+      workStart = null;
+      breakStart = event.minute;
+    } else if (event.label.includes('break finish')) {
+      if (breakStart !== null) breaks += Math.max(0, event.minute - breakStart);
+      breakStart = null;
+      workStart = event.minute;
+    } else if (event.label.includes('clock out')) {
+      if (workStart !== null) total += Math.max(0, event.minute - workStart);
+      if (breakStart !== null) breaks += Math.max(0, event.minute - breakStart);
+      workStart = null;
+      breakStart = null;
+    }
+  }
+
+  if (date === today()) {
+    const now = parseTimeMinutes(timeLabel()) || 0;
+    if (workStart !== null) total += Math.max(0, now - workStart);
+    if (breakStart !== null) breaks += Math.max(0, now - breakStart);
+  }
+
+  return {
+    total,
+    breaks,
+    events,
+    lastEvent: events[events.length - 1]?.rawLabel || '',
+    isOpen: workStart !== null || breakStart !== null,
+  };
+}
+
+function isWeekday(date: string) {
+  const day = new Date(`${date}T12:00:00`).getDay();
+  return day >= 1 && day <= 5;
 }
 
 function appendDatedLog(text: string, note: string) {
@@ -904,7 +991,9 @@ class RealEstateManagementView extends ItemView {
     const openTasks = tasks.filter(task => task.status !== 'done' && !isInFolder(task.file, this.plugin.settings.doneFolder));
     const todayTasks = openTasks.filter(task => task.due === today() || task.scheduled === today());
     const overdueTasks = openTasks.filter(task => !!task.due && task.due < today());
-    const daily = byKind('daily').find(record => record.date === today());
+    const dailyRecords = allRecords.filter(record => record.kind === 'daily');
+    const daily = dailyRecords.find(record => record.date === today());
+    const weekTotal = this.weekTimeTotal(dailyRecords);
     const selectedTask = tasks.find(task => task.file.path === this.selectedTaskPath) || todayTasks[0] || openTasks[0];
     if (selectedTask) this.selectedTaskPath = selectedTask.file.path;
     const selectedRecord = records.find(record => record.file.path === this.selectedRecordPath && record.kind !== 'task');
@@ -950,12 +1039,13 @@ class RealEstateManagementView extends ItemView {
     this.stat(stats, 'People', String(byKind('person').length));
     this.stat(stats, 'Projects', String(byKind('project').length));
     this.stat(stats, 'Meetings', String(byKind('meeting').length));
+    this.stat(stats, 'Week hours', `${formatMinutes(weekTotal.total)} / ${formatMinutes(weekTotal.target)}`);
     this.stat(stats, 'Health', healthIssues.length ? String(healthIssues.length) : 'OK');
     if (this.searchQuery.trim()) this.stat(stats, 'Search results', String(records.length));
 
     this.healthPanel(root, healthIssues);
     if (selectedTask) this.taskDetail(root, selectedTask);
-    this.dailyPanel(root, daily);
+    this.dailyPanel(root, daily, dailyRecords);
     this.meetingCapturePanel(root, selectedRecord ? undefined : selectedTask, selectedRecord);
     if (selectedRecord) this.recordDetail(root, selectedRecord, records);
 
@@ -997,6 +1087,17 @@ class RealEstateManagementView extends ItemView {
     const card = parent.createDiv({ cls: 'rem-stat' });
     card.createDiv({ text: label, cls: 'rem-stat-label' });
     card.createDiv({ text: value, cls: 'rem-stat-value' });
+  }
+
+  weekTimeTotal(dailyRecords: RemRecord[]) {
+    const dates = weekDates(today());
+    const byDate = new Map(dailyRecords.map(record => [record.date || record.file.basename, record]));
+    const total = dates.reduce((sum, date) => {
+      const record = byDate.get(date);
+      return sum + (record ? timeClockSummary(record.raw, date).total : 0);
+    }, 0);
+    const target = dates.filter(isWeekday).length * 435;
+    return { total, target };
   }
 
   healthPanel(parent: HTMLElement, issues: { level: 'error' | 'warning' | 'info'; text: string }[]) {
@@ -1128,7 +1229,7 @@ class RealEstateManagementView extends ItemView {
     }
   }
 
-  dailyPanel(parent: HTMLElement, daily: RemRecord | undefined) {
+  dailyPanel(parent: HTMLElement, daily: RemRecord | undefined, dailyRecords: RemRecord[]) {
     const panel = parent.createDiv({ cls: 'rem-daily-panel' });
     const header = panel.createDiv({ cls: 'rem-daily-header' });
     const title = header.createDiv();
@@ -1143,14 +1244,42 @@ class RealEstateManagementView extends ItemView {
       ['Reflections', sectionBody(daily?.raw || '', 'Reflections')],
       ['Brain dump', sectionBody(daily?.raw || '', 'Brain dump')],
     ] as const;
+    const todaySummary = timeClockSummary(daily?.raw || '', today());
+    const weekDatesList = weekDates(today());
+    const byDate = new Map(dailyRecords.map(record => [record.date || record.file.basename, record]));
+    const weekRows = weekDatesList.map(date => ({
+      date,
+      minutes: byDate.get(date) ? timeClockSummary(byDate.get(date)?.raw || '', date).total : 0,
+      target: isWeekday(date) ? 435 : 0,
+    }));
+    const weekTotal = weekRows.reduce((sum, row) => sum + row.minutes, 0);
+    const weekTarget = weekRows.reduce((sum, row) => sum + row.target, 0);
 
     const clock = panel.createDiv({ cls: 'rem-time-clock-panel' });
     const clockHeader = clock.createDiv({ cls: 'rem-time-clock-header' });
-    clockHeader.createEl('h4', { text: 'Time Clock' });
+    const clockTitle = clockHeader.createDiv();
+    clockTitle.createEl('h4', { text: 'Time Clock' });
+    clockTitle.createDiv({
+      text: `Today ${formatMinutes(todaySummary.total)}${todaySummary.breaks ? `, breaks ${formatMinutes(todaySummary.breaks)}` : ''}${todaySummary.isOpen ? ', running' : ''}`,
+      cls: 'rem-time-clock-subtitle',
+    });
     const clockActions = clockHeader.createDiv({ cls: 'rem-time-clock-actions' });
     for (const event of ['Clock in', 'Break start', 'Break finish', 'Clock out']) {
       clockActions.createEl('button', { text: event }).addEventListener('click', () => this.plugin.addDailyTimeClockEvent(event));
     }
+
+    const summary = clock.createDiv({ cls: 'rem-time-summary' });
+    summary.createDiv({ text: `Week ${formatMinutes(weekTotal)} / ${formatMinutes(weekTarget)}`, cls: 'rem-time-summary-total' });
+    const bars = summary.createDiv({ cls: 'rem-time-bars' });
+    for (const row of weekRows) {
+      const day = bars.createDiv({ cls: 'rem-time-day' });
+      day.createDiv({ text: row.date.slice(5), cls: 'rem-time-day-label' });
+      const track = day.createDiv({ cls: 'rem-time-track' });
+      const width = row.target ? Math.min(100, Math.round((row.minutes / row.target) * 100)) : row.minutes ? 100 : 0;
+      track.createDiv({ cls: 'rem-time-fill', attr: { style: `width: ${width}%` } });
+      day.createDiv({ text: formatMinutes(row.minutes), cls: 'rem-time-day-value' });
+    }
+
     clock.createDiv({
       text: sectionBody(daily?.raw || '', 'Time Clock') || 'No time events yet.',
       cls: daily ? 'rem-description rem-time-clock-body' : 'rem-empty',

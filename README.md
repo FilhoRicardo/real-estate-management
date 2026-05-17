@@ -29,8 +29,9 @@ Milestone 1 now establishes the independent plugin core:
 - Adds a quick meeting capture panel that creates linked meeting notes from the current task or selected record.
 - Adds editable body/description panels for tasks, clients, properties, people, projects, and meetings.
 - Creates dated backup copies before modifying existing notes through the plugin.
+- Calculates daily and weekly time totals from daily log clock events, including multiple breaks.
 
-Advanced time summaries and repair actions have not been migrated yet.
+Repair actions and saved views have not been migrated yet.
 
 ## Development
 
@@ -92,10 +93,9 @@ Supported `remType` values:
 
 ## Suggested Migration Roadmap
 
-1. Add daily time totals and weekly target summaries.
-2. Add safety tools: pre-write conflict checks, repair actions, and skipped-file diagnostics.
-3. Add saved filters across every record layer.
-4. Improve recurrence rules beyond simple day intervals.
+1. Add safety tools: pre-write conflict checks, repair actions, and skipped-file diagnostics.
+2. Add saved filters across every record layer.
+3. Improve recurrence rules beyond simple day intervals.
 
 ## Backup Behavior
 

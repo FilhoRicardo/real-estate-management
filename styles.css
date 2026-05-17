@@ -454,6 +454,12 @@
   margin: 0;
 }
 
+.rem-time-clock-subtitle {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  margin-top: 3px;
+}
+
 .rem-time-clock-actions {
   display: flex;
   flex-wrap: wrap;
@@ -464,6 +470,55 @@
 .rem-time-clock-body {
   max-height: 130px;
   overflow: auto;
+}
+
+.rem-time-summary {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  margin-bottom: 10px;
+  padding: 10px;
+}
+
+.rem-time-summary-total {
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.rem-time-bars {
+  display: grid;
+  gap: 7px;
+}
+
+.rem-time-day {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 46px 1fr 72px;
+}
+
+.rem-time-day-label,
+.rem-time-day-value {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.rem-time-day-value {
+  text-align: right;
+}
+
+.rem-time-track {
+  background: var(--background-modifier-border);
+  border-radius: 999px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.rem-time-fill {
+  background: var(--interactive-accent);
+  border-radius: inherit;
+  height: 100%;
+  min-width: 0;
 }
 
 .rem-meeting-panel {
