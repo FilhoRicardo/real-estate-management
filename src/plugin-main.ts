@@ -513,6 +513,14 @@ export default class RealEstateManagementPlugin extends Plugin {
     this.refreshViews();
   }
 
+  async addRecordNote(file: TFile, note: string) {
+    const clean = note.trim();
+    if (!clean) return;
+    await this.app.vault.process(file, current => appendDatedLog(current, clean));
+    new Notice('Record note added');
+    this.refreshViews();
+  }
+
   async updateTaskFields(file: TFile, fields: Record<string, string>) {
     await this.app.vault.process(file, current => updateFrontmatterScalars(current, {
       ...fields,
@@ -587,6 +595,7 @@ class RealEstateManagementView extends ItemView {
   selectedTaskPath = '';
   selectedRecordPath = '';
   noteDraft = '';
+  recordNoteDrafts: Record<string, string> = {};
   dailyDrafts: Record<string, string> = {};
 
   constructor(leaf: WorkspaceLeaf, plugin: RealEstateManagementPlugin) {
@@ -884,6 +893,38 @@ class RealEstateManagementView extends ItemView {
     this.relatedGroup(relationships, 'People', relatedPeople);
     this.relatedGroup(relationships, 'Properties', relatedProperties);
     if (!related.length) relationships.createDiv({ text: 'No linked records found yet.', cls: 'rem-empty' });
+
+    const notes = grid.createDiv({ cls: 'rem-panel rem-record-notes-panel' });
+    notes.createEl('h4', { text: 'Notes' });
+    const editor = notes.createDiv({ cls: 'rem-note-editor' });
+    const textarea = editor.createEl('textarea', {
+      attr: {
+        placeholder: `Add a ${record.kind} note... Enter to save, Shift+Enter for a new line`,
+      },
+    });
+    textarea.value = this.recordNoteDrafts[record.file.path] || '';
+    textarea.addEventListener('input', () => {
+      this.recordNoteDrafts[record.file.path] = textarea.value;
+    });
+    textarea.addEventListener('keydown', async event => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        await this.saveRecordNote(record);
+      }
+    });
+    editor.createEl('button', { text: 'Add' }).addEventListener('click', () => this.saveRecordNote(record));
+
+    if (!record.notes.length) {
+      notes.createDiv({ text: 'No notes yet.', cls: 'rem-empty' });
+      return;
+    }
+
+    const list = notes.createDiv({ cls: 'rem-note-list' });
+    for (const note of record.notes.slice().reverse().slice(0, 12)) {
+      const card = list.createDiv({ cls: 'rem-note-card' });
+      card.createDiv({ text: note.date, cls: 'rem-note-date' });
+      card.createDiv({ text: note.text, cls: 'rem-note-text' });
+    }
   }
 
   relatedGroup(parent: HTMLElement, title: string, records: RemRecord[]) {
@@ -904,6 +945,14 @@ class RealEstateManagementView extends ItemView {
         this.render();
       });
     }
+  }
+
+  async saveRecordNote(record: RemRecord) {
+    const note = (this.recordNoteDrafts[record.file.path] || '').trim();
+    if (!note) return;
+    await this.plugin.addRecordNote(record.file, note);
+    this.recordNoteDrafts[record.file.path] = '';
+    await this.render();
   }
 
   dateControl(parent: HTMLElement, label: string, value: string, onChange: (value: string) => void) {

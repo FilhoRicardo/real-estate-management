@@ -205,7 +205,7 @@
 .rem-record-detail-grid {
   display: grid;
   gap: 14px;
-  grid-template-columns: minmax(280px, 0.9fr) minmax(280px, 1.1fr);
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
 
 .rem-panel {
@@ -217,6 +217,10 @@
 
 .rem-panel h4 {
   margin: 0 0 10px;
+}
+
+.rem-record-notes-panel {
+  min-height: 220px;
 }
 
 .rem-description,
