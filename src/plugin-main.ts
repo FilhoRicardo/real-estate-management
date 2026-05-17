@@ -57,6 +57,8 @@ interface RemRecord {
   notes: { date: string; text: string }[];
   raw: string;
   body: string;
+  recurrent: boolean;
+  recurrence: string | null;
 }
 
 interface RecordDraft {
@@ -72,6 +74,8 @@ interface RecordDraft {
   projects: string;
   tasks: string;
   body: string;
+  recurrent: string;
+  recurrence: string;
 }
 
 interface RecordMetadataDraft {
@@ -96,6 +100,17 @@ function addDays(date: string, amount: number) {
   d.setDate(d.getDate() + amount);
   const pad = (value: number) => String(value).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function recurrenceDays(rule: string | null) {
+  const lower = String(rule || '').toLowerCase();
+  if (lower.includes('daily')) return 1;
+  if (lower.includes('monthly')) return 30;
+  if (lower.includes('quarter')) return 91;
+  if (lower.includes('year')) return 365;
+  const interval = lower.match(/interval=(\d+)/i)?.[1] || lower.match(/every\s+(\d+)/i)?.[1];
+  if (interval) return Number(interval) || 7;
+  return 7;
 }
 
 function normalisePath(path: string) {
@@ -204,6 +219,8 @@ function parseRecord(file: TFile, text: string, settings: RealEstateManagementSe
       notes: task.logs || [],
       raw: text,
       body: taskDescriptionText(text),
+      recurrent: task.recurrent,
+      recurrence: task.recurrence,
     };
   }
 
@@ -226,6 +243,8 @@ function parseRecord(file: TFile, text: string, settings: RealEstateManagementSe
     notes: parseDatedLogs(text),
     raw: text,
     body: recordBodyText(text, kind),
+    recurrent: firstString(fm.recurrent) === 'true' || asArray(fm.tags).includes('recurrent'),
+    recurrence: firstString(fm.recurrence) || null,
   };
 }
 
@@ -405,7 +424,7 @@ function buildRecordMarkdown(draft: RecordDraft) {
   const body = draft.body.trim();
 
   if (draft.kind === 'task') {
-    return `---\nremType: task\ntitle: ${yamlString(title)}\nstatus: ${draft.status || 'open'}\npriority: ${draft.priority || 'normal'}\ndue: ${draft.due || ''}\nscheduled: ${draft.scheduled || ''}\ncreated: ${created}\nmodified: ${created}\nclient: ${client ? yamlString(client) : ''}\nproperty: ${property ? yamlString(property) : ''}\npeople: ${yamlList(people)}\nprojects: ${yamlList(projects)}\ntags:\n  - ${REM_TAG}\n  - rem-task\n---\n\n# ${title}\n\n## Description\n\n${body || ''}\n\n---\n\n## Notes\n\n---\n`;
+    return `---\nremType: task\ntitle: ${yamlString(title)}\nstatus: ${draft.status || 'open'}\npriority: ${draft.priority || 'normal'}\ndue: ${draft.due || ''}\nscheduled: ${draft.scheduled || ''}\nrecurrent: ${draft.recurrent === 'true' ? 'true' : 'false'}\nrecurrence: ${draft.recurrence || ''}\ncreated: ${created}\nmodified: ${created}\nclient: ${client ? yamlString(client) : ''}\nproperty: ${property ? yamlString(property) : ''}\npeople: ${yamlList(people)}\nprojects: ${yamlList(projects)}\ntags:\n  - ${REM_TAG}\n  - rem-task\n---\n\n# ${title}\n\n## Description\n\n${body || ''}\n\n---\n\n## Notes\n\n---\n`;
   }
 
   if (draft.kind === 'meeting') {
@@ -574,6 +593,19 @@ export default class RealEstateManagementPlugin extends Plugin {
       completed: today(),
       completedDate: today(),
     });
+  }
+
+  async finishTaskInstance(task: RemRecord) {
+    const days = recurrenceDays(task.recurrence);
+    const fields: Record<string, string> = {
+      lastCompleted: today(),
+      status: task.status === 'done' ? 'open' : task.status || 'open',
+    };
+    if (task.due) fields.due = addDays(task.due, days);
+    if (task.scheduled) fields.scheduled = addDays(task.scheduled, days);
+    if (!task.due && !task.scheduled) fields.due = addDays(today(), days);
+    await this.updateTaskFields(task.file, fields);
+    new Notice(`Finished instance; next run moved by ${days} days`);
   }
 
   async postponeTask(task: RemRecord) {
@@ -822,6 +854,7 @@ class RealEstateManagementView extends ItemView {
     meta.createSpan({ text: task.priority || 'normal' });
     if (task.due) meta.createSpan({ text: `due ${task.due}` });
     if (task.scheduled) meta.createSpan({ text: `scheduled ${task.scheduled}` });
+    if (task.recurrent) meta.createSpan({ text: task.recurrence ? `recurrent ${task.recurrence}` : 'recurrent' });
     if (task.client) meta.createSpan({ text: task.client });
     if (task.property) meta.createSpan({ text: task.property });
 
@@ -829,6 +862,7 @@ class RealEstateManagementView extends ItemView {
     this.dateControl(controls, 'Due', task.due || '', value => this.updateSelectedTask(task, { due: value }));
     this.dateControl(controls, 'Scheduled', task.scheduled || '', value => this.updateSelectedTask(task, { scheduled: value }));
     controls.createEl('button', { text: 'Postpone 1w' }).addEventListener('click', () => this.plugin.postponeTask(task));
+    if (task.recurrent) controls.createEl('button', { text: 'Finish instance' }).addEventListener('click', () => this.plugin.finishTaskInstance(task));
     controls.createEl('button', { text: 'Close task' }).addEventListener('click', () => this.plugin.closeTask(task.file));
 
     const openButton = header.createEl('button', { text: 'Open file' });
@@ -1065,6 +1099,8 @@ class RecordCreateModal extends Modal {
       projects: '',
       tasks: '',
       body: '',
+      recurrent: 'false',
+      recurrence: '',
     };
   }
 
@@ -1079,6 +1115,8 @@ class RecordCreateModal extends Modal {
       this.text('Priority', 'normal, high, low', 'priority');
       this.text('Due', 'YYYY-MM-DD', 'due');
       this.text('Scheduled', 'YYYY-MM-DD', 'scheduled');
+      this.text('Recurrent', 'true or false', 'recurrent');
+      this.text('Recurrence', 'weekly, daily, monthly, quarterly, yearly, or every 14 days', 'recurrence');
     }
     if (this.draft.kind !== 'client') this.text('Client', 'Client note name', 'client');
     if (!['client', 'property'].includes(this.draft.kind)) this.text('Property', 'Property note name', 'property');
